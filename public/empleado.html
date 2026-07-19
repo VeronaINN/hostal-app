@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Turno de hoy · Hostal</title>
+<link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+
+<div class="app-shell">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">H</div>
+      <span>HOSTAL · GESTIÓN OPERATIVA</span>
+    </div>
+    <div class="who">
+      <span class="role-tag">Empleado</span>
+      <span id="empNameLabel"></span>
+      <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div id="msgBox"></div>
+
+    <div class="card">
+      <h2><span class="num">+</span> Registrar servicio</h2>
+      <div class="form-row">
+        <div class="field">
+          <label>N° Habitación</label>
+          <select id="fHabitacion"></select>
+        </div>
+        <div class="field">
+          <label>Descripción / Servicio</label>
+          <select id="fDescripcion" onchange="toggleCustomDesc()"></select>
+        </div>
+        <div class="field" id="customDescWrap" style="display:none;">
+          <label>Especificar</label>
+          <input type="text" id="fDescripcionCustom" placeholder="Ej. Reserva especial..." />
+        </div>
+        <div class="field" style="max-width:130px;">
+          <label>Tarifa (USD)</label>
+          <input type="number" id="fTarifa" min="0" step="0.01" placeholder="0.00" oninput="renderPaymentSummary()" />
+        </div>
+        <div class="field">
+          <label>N° Comprobante / Factura</label>
+          <input type="text" id="fComprobante" placeholder="Opcional" />
+        </div>
+        <div class="field" style="max-width:160px;">
+          <label>Fecha</label>
+          <input type="date" id="fFecha" />
+        </div>
+      </div>
+
+      <hr class="divider" />
+      <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin-bottom:10px;">
+        Forma de pago — si el cliente pagó con más de un método, agrega una fila por cada uno
+      </label>
+      <div id="paymentRows"></div>
+      <button class="btn-secondary" style="margin-top:6px;" onclick="addPaymentRow()">+ Agregar otro método de pago</button>
+      <div id="paymentSummary" class="small-text" style="margin-top:12px;"></div>
+
+      <hr class="divider" />
+      <button class="btn-primary" style="max-width:220px;" onclick="submitRecord()">Guardar registro</button>
+    </div>
+
+    <div class="card">
+      <h2><span class="num">≡</span> Registros de mi turno (hoy)</h2>
+      <div class="table-wrap">
+        <table class="data" id="myTable">
+          <thead>
+            <tr>
+              <th>N°</th><th>Habitación</th><th>Servicio</th><th>Tarifa</th>
+              <th>Forma de pago</th><th>Comprobante</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="myTableBody"></tbody>
+        </table>
+      </div>
+      <div id="myEmpty" class="empty-state" style="display:none;">Aún no registras servicios en este turno.</div>
+      <hr class="divider" />
+      <div class="small-text">Total registrado en este turno (referencial, no incluye consolidados de meses anteriores): <b id="myTotal">$0.00</b></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/empleado.js"></script>
+</body>
+</html>

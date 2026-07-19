@@ -1,0 +1,16 @@
+{
+  "name": "hostal-gestion",
+  "version": "1.0.0",
+  "description": "Sistema de gestion diaria de ventas, inventario y turnos para hostal",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "xlsx": "^0.18.5"
+  }
+}

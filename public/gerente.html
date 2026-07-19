@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Panel de Gerencia · Hostal</title>
+<link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+
+<div class="app-shell">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">H</div>
+      <span>HOSTAL · GESTIÓN OPERATIVA</span>
+    </div>
+    <div class="who">
+      <span class="role-tag">Gerente</span>
+      <span id="liveIndicator" class="role-tag" style="display:none;background:rgba(46,125,91,0.25);border-color:transparent;">● En vivo</span>
+      <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="pill-tabs">
+      <button id="tabDash" class="active" onclick="switchTab('dash')">Dashboard</button>
+      <button id="tabHist" onclick="switchTab('hist')">Histórico / Reportes</button>
+      <button id="tabConfig" onclick="switchTab('config')">Configuración</button>
+    </div>
+
+    <div id="msgBox"></div>
+
+    <!-- ===================== DASHBOARD ===================== -->
+    <div id="viewDash">
+      <div class="grid-3" style="margin-bottom:14px;">
+        <div class="metric dark">
+          <div class="label">Recaudación de hoy</div>
+          <div class="value" id="mHoy">$0.00</div>
+          <div class="sub" id="mFecha">—</div>
+        </div>
+        <div class="metric">
+          <div class="label">Recaudación de la semana</div>
+          <div class="value" id="mSemana">$0.00</div>
+          <div class="sub">Lunes a hoy</div>
+        </div>
+        <div class="metric">
+          <div class="label">Recaudación del mes</div>
+          <div class="value" id="mMes">$0.00</div>
+          <div class="sub" id="mMesLabel">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="num">$</span> Corte de caja — cuánto debe haber en cada medio</h2>
+        <div class="pill-tabs" id="cajaPeriodTabs">
+          <button class="active" onclick="setCajaPeriod('hoy')">Hoy</button>
+          <button onclick="setCajaPeriod('semana')">Semana</button>
+          <button onclick="setCajaPeriod('mes')">Mes</button>
+        </div>
+        <div class="grid-2">
+          <div class="metric">
+            <div class="label">Físico / Efectivo en caja</div>
+            <div class="value" id="cEfectivo">$0.00</div>
+          </div>
+          <div class="metric">
+            <div class="label">Ingresado a cuentas / tarjeta</div>
+            <div class="value" id="cBancos">$0.00</div>
+          </div>
+        </div>
+        <hr class="divider" />
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Medio de pago</th><th>Monto</th></tr></thead>
+            <tbody id="cDetalleBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2><span class="num">%</span> Ocupación por tipo de servicio</h2>
+          <div class="small-text" style="margin-bottom:10px;">Hoy</div>
+          <div class="grid-3">
+            <div class="metric"><div class="label">Noches</div><div class="value small" id="oNochesHoy">0</div></div>
+            <div class="metric"><div class="label">Horas / Momento</div><div class="value small" id="oHorasHoy">0</div></div>
+            <div class="metric"><div class="label">Otros</div><div class="value small" id="oOtrosHoy">0</div></div>
+          </div>
+          <div class="small-text" style="margin:16px 0 10px;">Acumulado del mes</div>
+          <div class="grid-3">
+            <div class="metric"><div class="label">Noches</div><div class="value small" id="oNochesMes">0</div></div>
+            <div class="metric"><div class="label">Horas / Momento</div><div class="value small" id="oHorasMes">0</div></div>
+            <div class="metric"><div class="label">Otros</div><div class="value small" id="oOtrosMes">0</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="num">✓</span> Auditoría de cierres de turno (hoy)</h2>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>Empleado</th><th>N° reg.</th><th>Efectivo</th><th>Bancos</th><th>Total</th></tr></thead>
+              <tbody id="auditBody"></tbody>
+            </table>
+          </div>
+          <div id="auditEmpty" class="empty-state" style="display:none;">Sin registros de turno hoy.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== HISTÓRICO / REPORTES ===================== -->
+    <div id="viewHist" style="display:none;">
+      <div class="card">
+        <h2><span class="num">⌕</span> Filtros</h2>
+        <div class="form-row">
+          <div class="field"><label>Desde</label><input type="date" id="hFrom" /></div>
+          <div class="field"><label>Hasta</label><input type="date" id="hTo" /></div>
+          <div class="field">
+            <label>Empleado</label>
+            <select id="hEmployee"><option value="">Todos</option></select>
+          </div>
+          <div class="field">
+            <label>Método de pago</label>
+            <select id="hMetodo"><option value="">Todos</option></select>
+          </div>
+          <div class="field" style="max-width:130px;"><label>Habitación</label><input type="text" id="hHabitacion" /></div>
+          <button class="btn-secondary" onclick="loadHistory()">Aplicar filtros</button>
+          <button class="btn-primary" style="max-width:180px;" onclick="exportExcel()">Exportar a Excel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="num">≡</span> Resultados <span class="small-text" id="hCount"></span></h2>
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>N°</th><th>Fecha</th><th>Habitación</th><th>Servicio</th><th>Tarifa</th>
+                <th>Forma de pago</th><th>Comprobante</th><th>Turno</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="hBody"></tbody>
+          </table>
+        </div>
+        <div id="hEmpty" class="empty-state" style="display:none;">No hay registros con los filtros seleccionados.</div>
+        <hr class="divider" />
+        <div class="small-text">Total filtrado: <b id="hTotal">$0.00</b></div>
+      </div>
+    </div>
+
+    <!-- ===================== CONFIGURACIÓN ===================== -->
+    <div id="viewConfig" style="display:none;">
+      <div class="grid-2">
+        <div class="card">
+          <h2><span class="num">＋</span> Empleados</h2>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>Nombre</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="empBody"></tbody>
+            </table>
+          </div>
+          <hr class="divider" />
+          <div class="form-row">
+            <div class="field"><label>Nombre</label><input type="text" id="newEmpName" /></div>
+            <div class="field" style="max-width:120px;"><label>PIN</label><input type="text" id="newEmpPin" maxlength="6" /></div>
+            <button class="btn-secondary" onclick="addEmployee()">Añadir</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="num">🛏</span> Habitaciones y servicios</h2>
+          <div class="field">
+            <label>Habitaciones registradas</label>
+            <div class="small-text" id="roomsList" style="margin-bottom:8px;"></div>
+            <div class="form-row">
+              <input type="text" id="newRoom" placeholder="N° de habitación" style="max-width:160px;" />
+              <button class="btn-secondary" onclick="addRoom()">Añadir</button>
+            </div>
+          </div>
+          <hr class="divider" />
+          <div class="field">
+            <label>Tipos de servicio</label>
+            <div class="small-text" id="servicesList" style="margin-bottom:8px;"></div>
+            <div class="form-row">
+              <input type="text" id="newService" placeholder="Ej. FIN DE SEMANA" style="max-width:220px;" />
+              <button class="btn-secondary" onclick="addService()">Añadir</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="max-width:420px;">
+        <h2><span class="num">🔒</span> Cambiar contraseña de gerente</h2>
+        <div class="field"><label>Nueva contraseña</label><input type="password" id="newMgrPass" /></div>
+        <button class="btn-primary" onclick="changeManagerPassword()">Actualizar contraseña</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/gerente.js"></script>
+</body>
+</html>

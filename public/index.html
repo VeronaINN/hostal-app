@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hostal · Sistema de Gestión</title>
+<link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-side">
+    <div>
+      <div class="brand-lg">HOSTAL · GESTIÓN OPERATIVA</div>
+      <div class="tagline">
+        Registro diario de ventas, control de turnos y consolidado
+        financiero en un solo lugar.
+      </div>
+    </div>
+    <div class="ledger-line">CONTROL AÑO 2026 — REGISTRO N° 000001 EN ADELANTE</div>
+  </div>
+
+  <div class="login-panel">
+    <div class="login-card">
+      <div class="role-switch">
+        <button id="tabEmployee" class="active" onclick="showTab('employee')">Empleado</button>
+        <button id="tabManager" onclick="showTab('manager')">Gerente</button>
+      </div>
+
+      <div id="errorBox"></div>
+
+      <!-- ===== FORMULARIO EMPLEADO ===== -->
+      <div id="formEmployee">
+        <h1>Ingreso de turno</h1>
+        <p class="sub">Selecciona tu nombre e ingresa tu PIN para registrar el turno de hoy.</p>
+
+        <div class="field">
+          <label>Empleado</label>
+          <select id="empName"></select>
+        </div>
+        <div class="field">
+          <label>PIN</label>
+          <input type="password" id="empPin" inputmode="numeric" maxlength="6" placeholder="••••" />
+        </div>
+        <button class="btn-primary" onclick="loginEmployee()">Ingresar</button>
+      </div>
+
+      <!-- ===== FORMULARIO GERENTE ===== -->
+      <div id="formManager" style="display:none;">
+        <h1>Acceso de gerencia</h1>
+        <p class="sub">Panel restringido: consolidado financiero, auditoría y configuración.</p>
+
+        <div class="field">
+          <label>Contraseña</label>
+          <input type="password" id="mgrPass" placeholder="Contraseña de gerente" />
+        </div>
+        <button class="btn-primary" onclick="loginManager()">Entrar al panel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadEmployees() {
+  // Los nombres se listan aunque aún no haya sesión, usando un endpoint
+  // ligero de solo-lectura del propio flujo de login del formulario.
+  try {
+    const res = await fetch('/api/config-public-employees');
+    if (res.ok) {
+      const names = await res.json();
+      const sel = document.getElementById('empName');
+      sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
+    }
+  } catch (e) { /* silencioso */ }
+}
+
+function showTab(which) {
+  document.getElementById('tabEmployee').classList.toggle('active', which === 'employee');
+  document.getElementById('tabManager').classList.toggle('active', which === 'manager');
+  document.getElementById('formEmployee').style.display = which === 'employee' ? 'block' : 'none';
+  document.getElementById('formManager').style.display = which === 'manager' ? 'block' : 'none';
+  document.getElementById('errorBox').innerHTML = '';
+}
+
+function showError(msg) {
+  document.getElementById('errorBox').innerHTML = `<div class="error-msg">${msg}</div>`;
+}
+
+async function loginEmployee() {
+  const name = document.getElementById('empName').value;
+  const pin = document.getElementById('empPin').value;
+  const res = await fetch('/api/login/employee', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, pin })
+  });
+  const data = await res.json();
+  if (!res.ok) return showError(data.error || 'Error al ingresar');
+  window.location.href = '/empleado.html';
+}
+
+async function loginManager() {
+  const password = document.getElementById('mgrPass').value;
+  const res = await fetch('/api/login/manager', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const data = await res.json();
+  if (!res.ok) return showError(data.error || 'Error al ingresar');
+  window.location.href = '/gerente.html';
+}
+
+loadEmployees();
+</script>
+</body>
+</html>
