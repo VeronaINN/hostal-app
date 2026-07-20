@@ -133,8 +133,8 @@
           <table class="data">
             <thead>
               <tr>
-                <th>N°</th><th>Fecha</th><th>Habitación</th><th>Servicio</th><th>Tarifa</th>
-                <th>Forma de pago</th><th>Comprobante</th><th>Turno</th><th></th>
+                <th>N°</th><th>Fecha</th><th>Hora</th><th>Habitaciones / Servicios</th><th>Tarifa total</th>
+                <th>Forma de pago</th><th>Factura</th><th>Comprobante</th><th>Turno</th><th></th>
               </tr>
             </thead>
             <tbody id="hBody"></tbody>
@@ -148,41 +148,68 @@
 
     <!-- ===================== CONFIGURACIÓN ===================== -->
     <div id="viewConfig" style="display:none;">
-      <div class="grid-2">
+      <div class="card">
+        <h2><span class="num">＋</span> Empleados</h2>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr><th>Nombre</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="empBody"></tbody>
+          </table>
+        </div>
+        <hr class="divider" />
+        <div class="form-row">
+          <div class="field"><label>Nombre</label><input type="text" id="newEmpName" /></div>
+          <div class="field" style="max-width:120px;"><label>PIN</label><input type="text" id="newEmpPin" maxlength="6" /></div>
+          <button class="btn-secondary" onclick="addEmployee()">Añadir</button>
+        </div>
+      </div>
+
+      <div class="grid-3">
         <div class="card">
-          <h2><span class="num">＋</span> Empleados</h2>
+          <h2><span class="num">🛏</span> Habitaciones</h2>
           <div class="table-wrap">
             <table class="data">
-              <thead><tr><th>Nombre</th><th>Estado</th><th></th></tr></thead>
-              <tbody id="empBody"></tbody>
+              <thead><tr><th>Habitación</th><th></th></tr></thead>
+              <tbody id="roomsBody"></tbody>
             </table>
           </div>
           <hr class="divider" />
           <div class="form-row">
-            <div class="field"><label>Nombre</label><input type="text" id="newEmpName" /></div>
-            <div class="field" style="max-width:120px;"><label>PIN</label><input type="text" id="newEmpPin" maxlength="6" /></div>
-            <button class="btn-secondary" onclick="addEmployee()">Añadir</button>
+            <div class="field"><input type="text" id="newRoom" placeholder="N° de habitación" /></div>
+            <button class="btn-secondary" onclick="addRoom()">Añadir</button>
           </div>
         </div>
 
         <div class="card">
-          <h2><span class="num">🛏</span> Habitaciones y servicios</h2>
-          <div class="field">
-            <label>Habitaciones registradas</label>
-            <div class="small-text" id="roomsList" style="margin-bottom:8px;"></div>
-            <div class="form-row">
-              <input type="text" id="newRoom" placeholder="N° de habitación" style="max-width:160px;" />
-              <button class="btn-secondary" onclick="addRoom()">Añadir</button>
-            </div>
+          <h2><span class="num">🛎</span> Tipos de servicio</h2>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>Servicio</th><th></th></tr></thead>
+              <tbody id="servicesBody"></tbody>
+            </table>
           </div>
           <hr class="divider" />
-          <div class="field">
-            <label>Tipos de servicio</label>
-            <div class="small-text" id="servicesList" style="margin-bottom:8px;"></div>
-            <div class="form-row">
-              <input type="text" id="newService" placeholder="Ej. FIN DE SEMANA" style="max-width:220px;" />
-              <button class="btn-secondary" onclick="addService()">Añadir</button>
-            </div>
+          <div class="form-row">
+            <div class="field"><input type="text" id="newService" placeholder="Ej. FIN DE SEMANA" /></div>
+            <button class="btn-secondary" onclick="addService()">Añadir</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="num">💳</span> Métodos de pago</h2>
+          <div class="table-wrap">
+            <table class="data">
+              <thead><tr><th>Método</th><th>Comprobante</th><th></th></tr></thead>
+              <tbody id="paymentMethodsBody"></tbody>
+            </table>
+          </div>
+          <div class="small-text" style="margin-top:8px;">
+            "Comprobante" = pedirá N° de comprobante en el formulario del empleado cuando se use este método (pensado para transferencias).
+          </div>
+          <hr class="divider" />
+          <div class="form-row">
+            <div class="field"><input type="text" id="newPaymentMethod" placeholder="Ej. TRANSFERENCIA BANCO X" /></div>
+            <button class="btn-secondary" onclick="addPaymentMethod()">Añadir</button>
           </div>
         </div>
       </div>

@@ -25,33 +25,33 @@
     <div id="msgBox"></div>
 
     <div class="card">
-      <h2><span class="num">+</span> Registrar servicio</h2>
+      <h2><span class="num">+</span> Registrar venta</h2>
       <div class="form-row">
-        <div class="field">
-          <label>N° Habitación</label>
-          <select id="fHabitacion"></select>
-        </div>
-        <div class="field">
-          <label>Descripción / Servicio</label>
-          <select id="fDescripcion" onchange="toggleCustomDesc()"></select>
-        </div>
-        <div class="field" id="customDescWrap" style="display:none;">
-          <label>Especificar</label>
-          <input type="text" id="fDescripcionCustom" placeholder="Ej. Reserva especial..." />
-        </div>
-        <div class="field" style="max-width:130px;">
-          <label>Tarifa (USD)</label>
-          <input type="number" id="fTarifa" min="0" step="0.01" placeholder="0.00" oninput="renderPaymentSummary()" />
-        </div>
-        <div class="field">
-          <label>N° Comprobante / Factura</label>
-          <input type="text" id="fComprobante" placeholder="Opcional" />
-        </div>
         <div class="field" style="max-width:160px;">
           <label>Fecha</label>
           <input type="date" id="fFecha" />
         </div>
+        <div class="field" style="max-width:140px;">
+          <label>Hora</label>
+          <input type="time" id="fHora" />
+        </div>
+        <div class="field" style="max-width:200px;">
+          <label>N° Factura</label>
+          <input type="text" id="fFactura" placeholder="Opcional" />
+        </div>
+        <div class="field" id="comprobanteWrap" style="max-width:200px;display:none;">
+          <label>N° Comprobante (transferencia)</label>
+          <input type="text" id="fComprobante" placeholder="N° de comprobante" />
+        </div>
       </div>
+
+      <hr class="divider" />
+      <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin-bottom:10px;">
+        Habitaciones / servicios de esta venta — agrega una fila por cada uno si el huésped solicitó más de uno
+      </label>
+      <div id="itemRows"></div>
+      <button class="btn-secondary" style="margin-top:6px;" onclick="addItemRow()">+ Agregar habitación / servicio</button>
+      <div class="small-text" style="margin-top:10px;">Tarifa total de la venta: <b id="itemsTotalLabel">$0.00</b></div>
 
       <hr class="divider" />
       <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin-bottom:10px;">
@@ -62,23 +62,23 @@
       <div id="paymentSummary" class="small-text" style="margin-top:12px;"></div>
 
       <hr class="divider" />
-      <button class="btn-primary" style="max-width:220px;" onclick="submitRecord()">Guardar registro</button>
+      <button class="btn-primary" style="max-width:220px;" onclick="submitRecord()">Guardar venta</button>
     </div>
 
     <div class="card">
-      <h2><span class="num">≡</span> Registros de mi turno (hoy)</h2>
+      <h2><span class="num">≡</span> Ventas de mi turno (hoy)</h2>
       <div class="table-wrap">
         <table class="data" id="myTable">
           <thead>
             <tr>
-              <th>N°</th><th>Habitación</th><th>Servicio</th><th>Tarifa</th>
-              <th>Forma de pago</th><th>Comprobante</th><th></th>
+              <th>N°</th><th>Hora</th><th>Habitaciones / Servicios</th><th>Tarifa total</th>
+              <th>Forma de pago</th><th>Factura</th><th>Comprobante</th><th></th>
             </tr>
           </thead>
           <tbody id="myTableBody"></tbody>
         </table>
       </div>
-      <div id="myEmpty" class="empty-state" style="display:none;">Aún no registras servicios en este turno.</div>
+      <div id="myEmpty" class="empty-state" style="display:none;">Aún no registras ventas en este turno.</div>
       <hr class="divider" />
       <div class="small-text">Total registrado en este turno (referencial, no incluye consolidados de meses anteriores): <b id="myTotal">$0.00</b></div>
     </div>

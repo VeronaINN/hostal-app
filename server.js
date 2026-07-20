@@ -105,6 +105,25 @@ function isNocheServicio(desc) {
   return (desc || "").toUpperCase().includes("NOCHE");
 }
 
+// Valida los ítems de una venta (una venta puede incluir varias
+// habitaciones/servicios, por ejemplo cuando un huésped reserva más de
+// un cuarto bajo una sola factura). Retorna un mensaje de error, o null.
+function validateItems(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return "Debes agregar al menos una habitación o servicio a la venta";
+  }
+  for (const it of items) {
+    if (!it || !it.habitacion || !it.descripcion) {
+      return "Cada línea de la venta debe tener habitación y descripción";
+    }
+    const tarifa = Number(it.tarifa);
+    if (Number.isNaN(tarifa) || tarifa <= 0) {
+      return "Cada línea de la venta debe tener una tarifa mayor a 0";
+    }
+  }
+  return null;
+}
+
 // Valida un arreglo de pagos mixtos: [{ metodo, monto }, ...]
 // La suma de los montos debe coincidir con la tarifa (tolerancia de 1 centavo
 // por redondeos). Retorna un mensaje de error, o null si todo está bien.
@@ -215,29 +234,33 @@ app.get("/api/records/mine", requireEmployee, (req, res) => {
 });
 
 app.post("/api/records", requireEmployee, (req, res) => {
-  const { habitacion, descripcion, tarifa, pagos, comprobante, fecha } = req.body;
+  const { items, factura, comprobante, pagos, fecha, hora } = req.body;
 
-  if (!habitacion || !descripcion || tarifa === undefined) {
-    return res.status(400).json({ error: "Faltan campos obligatorios" });
-  }
-  const tarifaNum = Number(tarifa);
-  if (Number.isNaN(tarifaNum) || tarifaNum <= 0) {
-    return res.status(400).json({ error: "Tarifa inválida" });
-  }
+  const itemsErr = validateItems(items);
+  if (itemsErr) return res.status(400).json({ error: itemsErr });
+
+  const tarifaNum = items.reduce((acc, it) => acc + Number(it.tarifa), 0);
 
   const db = getDB();
-  const pagosErr = validatePagos(pagos, tarifaNum, db.paymentMethods);
+  const pagosErr = validatePagos(pagos, tarifaNum, db.paymentMethods.map((m) => m.name));
   if (pagosErr) return res.status(400).json({ error: pagosErr });
 
   const record = {
     id: nextRecordId(db),
     fecha: fecha || todayStr(), // automática, editable si el empleado la envía
-    habitacion: String(habitacion),
-    descripcion: String(descripcion).toUpperCase(),
-    tarifa: tarifaNum,
+    hora: hora || new Date().toTimeString().slice(0, 5),
+    // Una venta puede incluir varias habitaciones/servicios (ej. un
+    // huésped que reserva más de un cuarto bajo la misma factura).
+    items: items.map((it) => ({
+      habitacion: String(it.habitacion),
+      descripcion: String(it.descripcion).toUpperCase(),
+      tarifa: Number(it.tarifa),
+    })),
+    tarifa: tarifaNum, // total de la venta (suma de los ítems)
+    factura: factura ? String(factura) : "",
+    comprobante: comprobante ? String(comprobante) : "",
     // Pago mixto: el cliente pudo pagar con más de un método a la vez.
     pagos: pagos.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) })),
-    comprobante: comprobante ? String(comprobante) : "",
     empleado: req.session.employeeName,
     createdAt: new Date().toISOString(),
   };
@@ -259,18 +282,28 @@ app.put("/api/records/mine/:id", requireEmployee, (req, res) => {
   );
   if (idx === -1) return res.status(404).json({ error: "Registro no encontrado" });
 
-  const { habitacion, descripcion, tarifa, pagos, comprobante } = req.body;
+  const { items, factura, comprobante, pagos, hora } = req.body;
   const r = db.records[idx];
-  const newTarifa = tarifa !== undefined ? Number(tarifa) : r.tarifa;
+
+  const newItems = items !== undefined ? items : r.items;
+  const itemsErr = validateItems(newItems);
+  if (itemsErr) return res.status(400).json({ error: itemsErr });
+  const newTarifa = newItems.reduce((acc, it) => acc + Number(it.tarifa), 0);
+
   const newPagos = pagos !== undefined ? pagos : r.pagos;
-  const pagosErr = validatePagos(newPagos, newTarifa, db.paymentMethods);
+  const pagosErr = validatePagos(newPagos, newTarifa, db.paymentMethods.map((m) => m.name));
   if (pagosErr) return res.status(400).json({ error: pagosErr });
 
-  if (habitacion !== undefined) r.habitacion = String(habitacion);
-  if (descripcion !== undefined) r.descripcion = String(descripcion).toUpperCase();
+  r.items = newItems.map((it) => ({
+    habitacion: String(it.habitacion),
+    descripcion: String(it.descripcion).toUpperCase(),
+    tarifa: Number(it.tarifa),
+  }));
   r.tarifa = newTarifa;
   r.pagos = newPagos.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) }));
+  if (factura !== undefined) r.factura = String(factura);
   if (comprobante !== undefined) r.comprobante = String(comprobante);
+  if (hora !== undefined) r.hora = hora;
   saveDB(db);
   broadcastUpdate("record-updated", r);
   res.json(r);
@@ -302,7 +335,7 @@ app.get("/api/records", requireManager, (req, res) => {
   if (to) list = list.filter((r) => r.fecha <= to);
   if (employee) list = list.filter((r) => r.empleado === employee);
   if (metodo) list = list.filter((r) => (r.pagos || []).some((p) => p.metodo === metodo));
-  if (habitacion) list = list.filter((r) => r.habitacion === String(habitacion));
+  if (habitacion) list = list.filter((r) => (r.items || []).some((it) => it.habitacion === String(habitacion)));
   list = list.slice().sort((a, b) => b.id - a.id);
   res.json(list);
 });
@@ -313,15 +346,24 @@ app.put("/api/records/:id", requireManager, (req, res) => {
   if (idx === -1) return res.status(404).json({ error: "Registro no encontrado" });
   const r = db.records[idx];
 
-  const newTarifa = req.body.tarifa !== undefined ? Number(req.body.tarifa) : r.tarifa;
+  const newItems = req.body.items !== undefined ? req.body.items : r.items;
+  const itemsErr = validateItems(newItems);
+  if (itemsErr) return res.status(400).json({ error: itemsErr });
+  const newTarifa = newItems.reduce((acc, it) => acc + Number(it.tarifa), 0);
+
   const newPagos = req.body.pagos !== undefined ? req.body.pagos : r.pagos;
-  const pagosErr = validatePagos(newPagos, newTarifa, db.paymentMethods);
+  const pagosErr = validatePagos(newPagos, newTarifa, db.paymentMethods.map((m) => m.name));
   if (pagosErr) return res.status(400).json({ error: pagosErr });
 
-  const fields = ["fecha", "habitacion", "descripcion", "comprobante", "empleado"];
+  const fields = ["fecha", "hora", "factura", "comprobante", "empleado"];
   for (const f of fields) {
     if (req.body[f] !== undefined) r[f] = req.body[f];
   }
+  r.items = newItems.map((it) => ({
+    habitacion: String(it.habitacion),
+    descripcion: String(it.descripcion).toUpperCase(),
+    tarifa: Number(it.tarifa),
+  }));
   r.tarifa = newTarifa;
   r.pagos = newPagos.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) }));
 
@@ -375,9 +417,12 @@ app.get("/api/dashboard", requireManager, (req, res) => {
     let horas = 0; // MOMENTO / 4 HORAS / variantes
     let otros = 0;
     for (const r of list) {
-      if (isNocheServicio(r.descripcion)) noches++;
-      else if (r.descripcion.toUpperCase().includes("MOMENTO") || r.descripcion.toUpperCase().includes("HORA")) horas++;
-      else otros++;
+      for (const it of r.items || []) {
+        const desc = (it.descripcion || "").toUpperCase();
+        if (isNocheServicio(desc)) noches++;
+        else if (desc.includes("MOMENTO") || desc.includes("HORA")) horas++;
+        else otros++;
+      }
     }
     return { noches, horas, otros };
   }
@@ -428,25 +473,34 @@ app.get("/api/export", requireManager, (req, res) => {
   if (to) list = list.filter((r) => r.fecha <= to);
   if (employee) list = list.filter((r) => r.empleado === employee);
   if (metodo) list = list.filter((r) => (r.pagos || []).some((p) => p.metodo === metodo));
-  if (habitacion) list = list.filter((r) => r.habitacion === String(habitacion));
+  if (habitacion) list = list.filter((r) => (r.items || []).some((it) => it.habitacion === String(habitacion)));
   list = list.slice().sort((a, b) => a.id - b.id);
 
-  const rows = list.map((r) => ({
-    "N°": r.id,
-    Fecha: r.fecha,
-    "N° Habitación": r.habitacion,
-    "Descripción / Servicio": r.descripcion,
-    "Tarifa (USD)": r.tarifa,
-    "Método de Pago": (r.pagos || []).map((p) => `${p.metodo}: $${p.monto.toFixed(2)}`).join(" + "),
-    "N° Comprobante/Factura": r.comprobante,
-    "Cierre de Turno": r.empleado,
-  }));
+  const rows = [];
+  for (const r of list) {
+    const formaPago = (r.pagos || []).map((p) => `${p.metodo}: $${p.monto.toFixed(2)}`).join(" + ");
+    (r.items || []).forEach((it, i) => {
+      rows.push({
+        "N° Venta": r.id,
+        Fecha: r.fecha,
+        Hora: r.hora,
+        "N° Habitación": it.habitacion,
+        "Descripción / Servicio": it.descripcion,
+        "Tarifa Ítem (USD)": it.tarifa,
+        "Tarifa Total Venta (USD)": i === 0 ? r.tarifa : "",
+        "N° Factura": i === 0 ? r.factura : "",
+        "N° Comprobante": i === 0 ? r.comprobante : "",
+        "Forma de Pago": i === 0 ? formaPago : "",
+        "Cierre de Turno": r.empleado,
+      });
+    });
+  }
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows);
   ws["!cols"] = [
-    { wch: 6 }, { wch: 12 }, { wch: 14 }, { wch: 22 },
-    { wch: 12 }, { wch: 26 }, { wch: 20 }, { wch: 18 },
+    { wch: 9 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 22 },
+    { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 30 }, { wch: 18 },
   ];
   XLSX.utils.book_append_sheet(wb, ws, "Reporte");
 
@@ -491,22 +545,92 @@ app.get("/api/admin/lists", requireManager, (req, res) => {
   res.json({ rooms: db.rooms, services: db.services, paymentMethods: db.paymentMethods });
 });
 
+// ---- Habitaciones ----
 app.post("/api/admin/rooms", requireManager, (req, res) => {
   const db = getDB();
-  const room = req.body.room;
-  if (room === undefined) return res.status(400).json({ error: "Falta habitación" });
-  if (!db.rooms.includes(room)) db.rooms.push(room);
+  const room = String(req.body.room || "").trim();
+  if (!room) return res.status(400).json({ error: "Falta habitación" });
+  if (db.rooms.includes(room)) return res.status(400).json({ error: "Esa habitación ya existe" });
+  db.rooms.push(room);
   saveDB(db);
   res.json({ ok: true, rooms: db.rooms });
 });
 
+app.put("/api/admin/rooms/:room", requireManager, (req, res) => {
+  const db = getDB();
+  const idx = db.rooms.indexOf(req.params.room);
+  if (idx === -1) return res.status(404).json({ error: "Habitación no encontrada" });
+  const newRoom = String(req.body.newRoom || "").trim();
+  if (!newRoom) return res.status(400).json({ error: "Nombre inválido" });
+  db.rooms[idx] = newRoom;
+  saveDB(db);
+  res.json({ ok: true, rooms: db.rooms });
+});
+
+app.delete("/api/admin/rooms/:room", requireManager, (req, res) => {
+  const db = getDB();
+  db.rooms = db.rooms.filter((r) => r !== req.params.room);
+  saveDB(db);
+  res.json({ ok: true, rooms: db.rooms });
+});
+
+// ---- Servicios ----
 app.post("/api/admin/services", requireManager, (req, res) => {
   const db = getDB();
   const service = (req.body.service || "").toUpperCase().trim();
   if (!service) return res.status(400).json({ error: "Falta servicio" });
-  if (!db.services.includes(service)) db.services.push(service);
+  if (db.services.includes(service)) return res.status(400).json({ error: "Ese servicio ya existe" });
+  db.services.push(service);
   saveDB(db);
   res.json({ ok: true, services: db.services });
+});
+
+app.put("/api/admin/services/:service", requireManager, (req, res) => {
+  const db = getDB();
+  const idx = db.services.indexOf(req.params.service);
+  if (idx === -1) return res.status(404).json({ error: "Servicio no encontrado" });
+  const newService = (req.body.newService || "").toUpperCase().trim();
+  if (!newService) return res.status(400).json({ error: "Nombre inválido" });
+  db.services[idx] = newService;
+  saveDB(db);
+  res.json({ ok: true, services: db.services });
+});
+
+app.delete("/api/admin/services/:service", requireManager, (req, res) => {
+  const db = getDB();
+  db.services = db.services.filter((s) => s !== req.params.service);
+  saveDB(db);
+  res.json({ ok: true, services: db.services });
+});
+
+// ---- Métodos de pago ----
+app.post("/api/admin/payment-methods", requireManager, (req, res) => {
+  const db = getDB();
+  const name = (req.body.name || "").toUpperCase().trim();
+  if (!name) return res.status(400).json({ error: "Falta el nombre del método de pago" });
+  if (db.paymentMethods.some((m) => m.name === name)) {
+    return res.status(400).json({ error: "Ese método de pago ya existe" });
+  }
+  db.paymentMethods.push({ name, requiresComprobante: !!req.body.requiresComprobante });
+  saveDB(db);
+  res.json({ ok: true, paymentMethods: db.paymentMethods });
+});
+
+app.put("/api/admin/payment-methods/:name", requireManager, (req, res) => {
+  const db = getDB();
+  const pm = db.paymentMethods.find((m) => m.name === req.params.name);
+  if (!pm) return res.status(404).json({ error: "Método de pago no encontrado" });
+  if (req.body.newName) pm.name = String(req.body.newName).toUpperCase().trim();
+  if (req.body.requiresComprobante !== undefined) pm.requiresComprobante = !!req.body.requiresComprobante;
+  saveDB(db);
+  res.json({ ok: true, paymentMethods: db.paymentMethods });
+});
+
+app.delete("/api/admin/payment-methods/:name", requireManager, (req, res) => {
+  const db = getDB();
+  db.paymentMethods = db.paymentMethods.filter((m) => m.name !== req.params.name);
+  saveDB(db);
+  res.json({ ok: true, paymentMethods: db.paymentMethods });
 });
 
 app.post("/api/admin/manager-password", requireManager, (req, res) => {

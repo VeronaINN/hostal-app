@@ -31,11 +31,23 @@ hostal-app/
 └── package.json
 ```
 
-**Pago mixto:** cada registro guarda `tarifa` (el precio total del
-servicio) y un arreglo `pagos: [{ metodo, monto }, ...]`. El backend
-exige que la suma de los montos coincida con la tarifa antes de
-guardar, así que un mismo registro puede tener, por ejemplo, $10 en
-efectivo + $5 en tarjeta.
+**Ventas con varias habitaciones/servicios:** cada registro es una
+"venta" que puede incluir varios `items` (uno por cada
+habitación/servicio, con su propia tarifa), pero comparte una sola
+`factura`, un solo `comprobante`, una fecha y una hora exacta. Esto
+cubre el caso de un huésped que reserva más de una habitación bajo
+una misma factura.
+
+**Comprobante condicional:** el campo de N° de comprobante solo se
+pide/muestra en el formulario del empleado cuando el método de pago
+elegido está marcado por el Gerente como "requiere comprobante"
+(pensado para transferencias bancarias). El N° de Factura, en
+cambio, siempre está disponible porque aplica a cualquier venta.
+
+**Pago mixto:** cada registro guarda `tarifa` (el precio total de la
+venta, suma de todos los ítems) y un arreglo `pagos: [{ metodo,
+monto }, ...]`. El backend exige que la suma de los montos coincida
+con la tarifa total antes de guardar.
 
 **Tiempo real:** el servidor mantiene abiertas conexiones
 Server-Sent Events (`/api/events`, solo para el rol Gerente) y avisa
@@ -112,24 +124,87 @@ propios PIN.
 
 ---
 
-## 3. Uso diario
+## 3. Actualizar una instalación que ya tenías corriendo
+
+Si ya habías instalado la versión anterior en tu computador y/o ya la
+tenías publicada en Railway, sigue estos pasos para que los cambios
+(ítems múltiples por venta, factura/comprobante, hora, CRUD completo
+de configuración) queden funcionando:
+
+### En tu computador (local)
+1. **Respalda tu archivo de datos por seguridad:** copia
+   `data/db.json` a otro lugar (por ejemplo, a tu escritorio). No es
+   obligatorio —el sistema migra tus datos automáticamente al nuevo
+   formato la primera vez que arranca— pero es una buena costumbre
+   antes de cualquier actualización.
+2. Descomprime el nuevo `.zip` que te compartí y **reemplaza** todos
+   los archivos de tu carpeta `hostal-app` (server.js, la carpeta
+   `db/`, la carpeta `public/` completa y el `README.md`) por los
+   nuevos. **No borres tu carpeta `data/`** — ahí vive tu información
+   real.
+3. No hace falta volver a correr `npm install` (no se agregaron
+   dependencias nuevas). Simplemente:
+   ```
+   npm start
+   ```
+4. Abre `http://localhost:3000` y confirma que en "Configuración"
+   del Gerente ya aparecen las tablas de habitaciones, servicios y
+   métodos de pago con botones **Editar/Eliminar**, y que el
+   formulario del Empleado ahora permite agregar varias
+   habitaciones/servicios por venta.
+
+### En Railway (la versión publicada en internet)
+1. Ve a tu repositorio en **GitHub** (el que creaste cuando la
+   publicaste la primera vez).
+2. **Sube los archivos nuevos reemplazando los anteriores:** puedes
+   arrastrar de nuevo todos los archivos del `.zip` descomprimido a
+   la página del repositorio (GitHub te preguntará si quieres
+   reemplazar los que tengan el mismo nombre — di que sí) y confirmar
+   con "Commit changes".
+   - **No subas la carpeta `data/`** ni el archivo `data/db.json` —
+     esa carpeta vive únicamente en el volumen persistente de
+     Railway, no en GitHub.
+3. Railway detecta el cambio en GitHub y **vuelve a desplegar la app
+   automáticamente** en uno o dos minutos (lo verás en la pestaña
+   "Deployments" de tu proyecto en Railway, con el estado pasando a
+   "Success"). Si tu proyecto no tiene el despliegue automático
+   activado, entra a Railway y presiona el botón **"Deploy"** o
+   **"Redeploy"** manualmente.
+4. **No necesitas tocar nada más:** el Volumen (`/app/data`) y las
+   Variables (`SESSION_SECRET`, `NODE_ENV`) que ya configuraste
+   siguen igual, y tus ventas ya registradas se migran solas al
+   nuevo formato la primera vez que el servidor arranca con el
+   código actualizado.
+5. Abre tu URL pública (`https://tu-hostal.up.railway.app`) y
+   verifica los mismos puntos del paso 4 de "En tu computador"
+   arriba de esta sección.
+
+## 4. Uso diario
 
 ### Vista Empleado
 - Selecciona tu nombre, ingresa tu PIN.
-- Registra cada servicio: habitación, descripción (con opciones
-  rápidas NOCHE / 4 HORAS / MOMENTO / MOMENTO + AGUA / MOMENTO +
-  POWERADE, o "OTRO" para una observación libre), tarifa y N° de
-  comprobante (opcional).
+- Cada venta registra **fecha y hora exacta** (ambas editables si
+  hace falta corregirlas).
+- **Varias habitaciones/servicios en una sola venta:** si un huésped
+  pide más de una habitación (o varios servicios), agrega una fila
+  por cada uno con el botón "+ Agregar habitación / servicio". La
+  tarifa total de la venta se calcula sola sumando cada fila.
+- **N° de Factura:** un solo campo por venta (aplica a toda la
+  venta, sin importar cuántas habitaciones incluya).
+- **N° de Comprobante:** este campo solo aparece cuando el método de
+  pago elegido es de tipo transferencia (lo define el Gerente en
+  Configuración). Si el cliente paga en efectivo o con tarjeta, el
+  campo permanece oculto.
 - **Pago mixto:** en la sección "Forma de pago" agregas una fila por
   cada método que usó el cliente (por ejemplo, $10 en efectivo + $5
   con tarjeta). El sistema muestra en vivo si la suma de los pagos ya
-  coincide con la tarifa, y no deja guardar el registro si no cuadra.
-  Si el cliente pagó todo con un solo método, simplemente se usa la
-  primera fila y no hace falta agregar más.
-- Solo ves los registros que tú mismo cargaste **en el día actual**.
-  No hay acceso a totales del mes, histórico de otros días ni
+  coincide con la tarifa total, y no deja guardar el registro si no
+  cuadra. Si el cliente pagó todo con un solo método, simplemente se
+  usa la primera fila y no hace falta agregar más.
+- Solo ves las ventas que tú mismo cargaste **en el día actual**. No
+  hay acceso a totales del mes, histórico de otros días ni
   configuración del sistema.
-- Puedes corregir o eliminar un registro tuyo mientras siga siendo el
+- Puedes corregir o eliminar una venta tuya mientras siga siendo el
   mismo día (por ejemplo, si te equivocaste al tipear).
 
 ### Vista Gerente
@@ -149,12 +224,15 @@ propios PIN.
   exporta el resultado filtrado a un archivo `.xlsx` con el botón
   "Exportar a Excel".
 - **Configuración:** administra empleados (crear, activar/desactivar,
-  cambiar PIN), habitaciones, tipos de servicio y la contraseña de
-  gerente.
+  cambiar PIN), y ahora también **añade, edita o elimina**
+  habitaciones, tipos de servicio y métodos de pago (incluyendo si
+  cada método requiere N° de comprobante). Los cambios aquí solo
+  afectan las opciones que verán los empleados de ahí en adelante —
+  las ventas ya registradas no se modifican.
 
 ---
 
-## 4. Publicarla en internet — acceso desde cualquier dispositivo y lugar
+## 5. Publicarla en internet — acceso desde cualquier dispositivo y lugar
 
 Para que empleados y gerente entren desde el celular, una tablet o
 cualquier computador (no solo dentro del hostal), el servidor debe
@@ -212,7 +290,7 @@ a la carpeta `data/` para que los registros no se borren nunca.
 
 ---
 
-## 5. Notas de seguridad
+## 6. Notas de seguridad
 
 - Las contraseñas y PIN se guardan **hasheados** (bcrypt), nunca en
   texto plano.

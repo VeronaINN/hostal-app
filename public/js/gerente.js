@@ -131,7 +131,7 @@ async function loadConfigLists() {
   document.getElementById('hEmployee').innerHTML =
     '<option value="">Todos</option>' + cfg.employees.map(e => `<option value="${e}">${e}</option>`).join('');
   document.getElementById('hMetodo').innerHTML =
-    '<option value="">Todos</option>' + cfg.paymentMethods.map(m => `<option value="${m}">${m}</option>`).join('');
+    '<option value="">Todos</option>' + cfg.paymentMethods.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
 }
 
 function buildFilterQuery() {
@@ -168,13 +168,20 @@ async function loadHistory() {
   let total = 0;
   body.innerHTML = rows.map(r => {
     total += r.tarifa;
+    const itemsHtml = (r.items || []).map(it =>
+      `<div>Hab. ${it.habitacion} — ${it.descripcion} <span class="small-text">(${money(it.tarifa)})</span></div>`
+    ).join('');
+    const pagosHtml = (r.pagos || []).map(p =>
+      `<span class="tag ${p.metodo === 'EFECTIVO' ? 'cash' : 'bank'}">${p.metodo}: ${money(p.monto)}</span>`
+    ).join(' ');
     return `<tr>
       <td>${r.id}</td>
       <td>${r.fecha}</td>
-      <td>${r.habitacion}</td>
-      <td>${r.descripcion}</td>
+      <td>${r.hora || '—'}</td>
+      <td>${itemsHtml}</td>
       <td class="money">${money(r.tarifa)}</td>
-      <td>${(r.pagos || []).map(p => `<span class="tag ${p.metodo === 'EFECTIVO' ? 'cash' : 'bank'}">${p.metodo}: ${money(p.monto)}</span>`).join(' ')}</td>
+      <td>${pagosHtml}</td>
+      <td>${r.factura || '—'}</td>
       <td>${r.comprobante || '—'}</td>
       <td>${r.empleado}</td>
       <td>
@@ -216,8 +223,45 @@ async function loadConfigPanel() {
     </tr>
   `).join('');
 
-  document.getElementById('roomsList').textContent = lists.rooms.join(', ');
-  document.getElementById('servicesList').textContent = lists.services.join(', ');
+  document.getElementById('roomsBody').innerHTML = lists.rooms.map(r => `
+    <tr>
+      <td>${r}</td>
+      <td>
+        <button class="icon-btn" onclick="editRoom('${escAttr(r)}')">Editar</button>
+        <button class="icon-btn danger" onclick="deleteRoom('${escAttr(r)}')">Eliminar</button>
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('servicesBody').innerHTML = lists.services.map(s => `
+    <tr>
+      <td>${s}</td>
+      <td>
+        <button class="icon-btn" onclick="editService('${escAttr(s)}')">Editar</button>
+        <button class="icon-btn danger" onclick="deleteService('${escAttr(s)}')">Eliminar</button>
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('paymentMethodsBody').innerHTML = lists.paymentMethods.map(m => `
+    <tr>
+      <td>${m.name}</td>
+      <td>
+        <button class="icon-btn" onclick="togglePaymentComprobante('${escAttr(m.name)}', ${!m.requiresComprobante})">
+          ${m.requiresComprobante ? '<span class="tag bank">Sí</span>' : '<span class="tag">No</span>'}
+        </button>
+      </td>
+      <td>
+        <button class="icon-btn" onclick="editPaymentMethod('${escAttr(m.name)}')">Renombrar</button>
+        <button class="icon-btn danger" onclick="deletePaymentMethod('${escAttr(m.name)}')">Eliminar</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// Escapa comillas simples para poder incrustar el valor en un atributo onclick="...('valor')"
+function escAttr(s) {
+  return String(s).replace(/'/g, "\\'");
 }
 
 async function addEmployee() {
@@ -248,28 +292,119 @@ async function toggleEmployee(name, active) {
   await loadConfigLists();
 }
 
+// ---- Habitaciones ----
 async function addRoom() {
   const room = document.getElementById('newRoom').value.trim();
   if (!room) return;
-  await fetch('/api/admin/rooms', {
+  const res = await fetch('/api/admin/rooms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ room })
   });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
   document.getElementById('newRoom').value = '';
   await loadConfigPanel();
 }
 
+async function editRoom(room) {
+  const newRoom = prompt('Nuevo número/nombre de habitación:', room);
+  if (!newRoom || newRoom.trim() === '') return;
+  const res = await fetch('/api/admin/rooms/' + encodeURIComponent(room), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newRoom: newRoom.trim() })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+  await loadConfigPanel();
+}
+
+async function deleteRoom(room) {
+  if (!confirm(`¿Eliminar la habitación "${room}" de la lista? Las ventas ya registradas no se modifican.`)) return;
+  await fetch('/api/admin/rooms/' + encodeURIComponent(room), { method: 'DELETE' });
+  await loadConfigPanel();
+}
+
+// ---- Servicios ----
 async function addService() {
   const service = document.getElementById('newService').value.trim();
   if (!service) return;
-  await fetch('/api/admin/services', {
+  const res = await fetch('/api/admin/services', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ service })
   });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
   document.getElementById('newService').value = '';
   await loadConfigPanel();
+}
+
+async function editService(service) {
+  const newService = prompt('Nuevo nombre del servicio:', service);
+  if (!newService || newService.trim() === '') return;
+  const res = await fetch('/api/admin/services/' + encodeURIComponent(service), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newService: newService.trim() })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+  await loadConfigPanel();
+}
+
+async function deleteService(service) {
+  if (!confirm(`¿Eliminar el servicio "${service}" de la lista? Las ventas ya registradas no se modifican.`)) return;
+  await fetch('/api/admin/services/' + encodeURIComponent(service), { method: 'DELETE' });
+  await loadConfigPanel();
+}
+
+// ---- Métodos de pago ----
+async function addPaymentMethod() {
+  const name = document.getElementById('newPaymentMethod').value.trim();
+  if (!name) return;
+  const requiresComprobante = name.toUpperCase().includes('TRANSFERENCIA');
+  const res = await fetch('/api/admin/payment-methods', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, requiresComprobante })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+  document.getElementById('newPaymentMethod').value = '';
+  await loadConfigPanel();
+  await loadConfigLists();
+}
+
+async function editPaymentMethod(name) {
+  const newName = prompt('Nuevo nombre del método de pago:', name);
+  if (!newName || newName.trim() === '') return;
+  const res = await fetch('/api/admin/payment-methods/' + encodeURIComponent(name), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newName: newName.trim() })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+  await loadConfigPanel();
+  await loadConfigLists();
+}
+
+async function togglePaymentComprobante(name, requiresComprobante) {
+  await fetch('/api/admin/payment-methods/' + encodeURIComponent(name), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requiresComprobante })
+  });
+  await loadConfigPanel();
+}
+
+async function deletePaymentMethod(name) {
+  if (!confirm(`¿Eliminar el método de pago "${name}"? Las ventas ya registradas no se modifican.`)) return;
+  await fetch('/api/admin/payment-methods/' + encodeURIComponent(name), { method: 'DELETE' });
+  await loadConfigPanel();
+  await loadConfigLists();
 }
 
 async function changeManagerPassword() {

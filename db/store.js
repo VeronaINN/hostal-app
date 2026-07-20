@@ -31,11 +31,11 @@ const DB_PATH = path.join(__dirname, "..", "data", "db.json");
 function defaultDB() {
   return {
     nextRecordId: 1,
-    records: [], // Registro operativo diario (ventas / servicios)
+    records: [], // Registro operativo diario (ventas — cada una puede tener varias habitaciones/servicios)
     employees: [
       { name: "David", pinHash: bcrypt.hashSync("1234", 8), active: true },
     ],
-    rooms: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    rooms: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
     services: [
       "NOCHE",
       "4 HORAS",
@@ -43,11 +43,14 @@ function defaultDB() {
       "MOMENTO + AGUA",
       "MOMENTO + POWERADE",
     ],
+    // requiresComprobante: si es true, el formulario del empleado exige/
+    // muestra el campo de N° de comprobante cuando se usa este método
+    // (pensado para transferencias bancarias).
     paymentMethods: [
-      "EFECTIVO",
-      "TRANSFERENCIA PICHINCHA",
-      "TRANSFERENCIA PRODUBANCO",
-      "TARJETA DE CRÉDITO",
+      { name: "EFECTIVO", requiresComprobante: false },
+      { name: "TRANSFERENCIA PICHINCHA", requiresComprobante: true },
+      { name: "TRANSFERENCIA PRODUBANCO", requiresComprobante: true },
+      { name: "TARJETA DE CRÉDITO", requiresComprobante: false },
     ],
     managerPasswordHash: bcrypt.hashSync("admin123", 8), // CAMBIAR al primer uso
   };
@@ -60,10 +63,53 @@ function ensureDB() {
   }
 }
 
+// Actualiza en memoria estructuras guardadas con una versión anterior del
+// sistema (por ejemplo, métodos de pago guardados como texto plano, o
+// ventas de una sola habitación/servicio) para que sigan funcionando sin
+// que el negocio pierda su histórico al actualizar la aplicación.
+function migrateDB(db) {
+  let changed = false;
+
+  if (db.paymentMethods.length && typeof db.paymentMethods[0] === "string") {
+    db.paymentMethods = db.paymentMethods.map((name) => ({
+      name,
+      requiresComprobante: name.toUpperCase().includes("TRANSFERENCIA"),
+    }));
+    changed = true;
+  }
+
+  db.records.forEach((r) => {
+    if (!r.items) {
+      r.items = [{ habitacion: r.habitacion, descripcion: r.descripcion, tarifa: r.tarifa }];
+      delete r.habitacion;
+      delete r.descripcion;
+      changed = true;
+    }
+    if (!r.pagos && r.metodoPago) {
+      r.pagos = [{ metodo: r.metodoPago, monto: r.tarifa }];
+      delete r.metodoPago;
+      changed = true;
+    }
+    if (r.factura === undefined) {
+      r.factura = r.comprobante || "";
+      r.comprobante = "";
+      changed = true;
+    }
+    if (r.hora === undefined) {
+      r.hora = "";
+      changed = true;
+    }
+  });
+
+  return changed;
+}
+
 function getDB() {
   ensureDB();
   const raw = fs.readFileSync(DB_PATH, "utf-8");
-  return JSON.parse(raw);
+  const db = JSON.parse(raw);
+  if (migrateDB(db)) saveDB(db);
+  return db;
 }
 
 // Escritura atómica: escribe a un archivo temporal y luego renombra,
