@@ -127,6 +127,36 @@
         </div>
       </div>
 
+      <div class="card" id="editCard" style="display:none;">
+        <h2><span class="num">✎</span> Editar venta N° <span id="editIdLabel"></span></h2>
+        <div class="form-row">
+          <div class="field" style="max-width:160px;"><label>Fecha</label><input type="date" id="eFecha" /></div>
+          <div class="field" style="max-width:140px;"><label>Hora</label><input type="time" id="eHora" /></div>
+          <div class="field" style="max-width:200px;"><label>Empleado (turno)</label><input type="text" id="eEmpleado" /></div>
+          <div class="field" style="max-width:200px;"><label>N° Factura</label><input type="text" id="eFactura" /></div>
+        </div>
+
+        <hr class="divider" />
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin-bottom:10px;">
+          Habitaciones / servicios de esta venta
+        </label>
+        <div id="eItemRows"></div>
+        <button class="btn-secondary" style="margin-top:6px;" onclick="addEditItemRow()">+ Agregar habitación / servicio</button>
+        <div class="small-text" style="margin-top:10px;">Tarifa total de la venta: <b id="eItemsTotalLabel">$0.00</b></div>
+
+        <hr class="divider" />
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin-bottom:10px;">
+          Forma de pago — el N° de comprobante aparece junto al método cuando corresponde a una transferencia
+        </label>
+        <div id="ePaymentRows"></div>
+        <button class="btn-secondary" style="margin-top:6px;" onclick="addEditPaymentRow()">+ Agregar otro método de pago</button>
+        <div id="ePaymentSummary" class="small-text" style="margin-top:12px;"></div>
+
+        <hr class="divider" />
+        <button class="btn-primary" style="max-width:200px;" onclick="saveEdit()">Guardar cambios</button>
+        <button class="btn-secondary" style="max-width:160px;" onclick="cancelEdit()">Cancelar</button>
+      </div>
+
       <div class="card">
         <h2><span class="num">≡</span> Resultados <span class="small-text" id="hCount"></span></h2>
         <div class="table-wrap">

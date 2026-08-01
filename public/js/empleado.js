@@ -1,10 +1,11 @@
 /**
  * empleado.js
- * Lógica de la vista de Empleado. Esta vista SOLO puede leer/crear
+ * Lógica de la vista de Empleado. Esta vista SOLO puede leer/crear/editar
  * ventas de su propio turno (el backend lo garantiza en /api/records/mine).
  * Una venta puede incluir varias habitaciones/servicios (ej. un huésped
  * que reserva más de un cuarto) bajo una sola factura, y puede pagarse
- * con más de un método de pago a la vez.
+ * con más de un método de pago a la vez. El N° de comprobante aparece
+ * junto al método de pago que lo requiere (normalmente, transferencias).
  */
 
 let rooms = [];
@@ -12,6 +13,8 @@ let services = [];
 let paymentMethodsFull = []; // [{ name, requiresComprobante }]
 let itemRowCounter = 0;
 let paymentRowCounter = 0;
+let myRecords = [];
+let editingRecordId = null;
 
 async function boot() {
   const sessionRes = await fetch('/api/session');
@@ -48,15 +51,20 @@ async function loadConfig() {
 
 function showMsg(html) {
   document.getElementById('msgBox').innerHTML = html;
-  setTimeout(() => { document.getElementById('msgBox').innerHTML = ''; }, 3500);
+  setTimeout(() => { document.getElementById('msgBox').innerHTML = ''; }, 4000);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
 // ---------------------------------------------------------------
 // Ítems de la venta (habitación + servicio + tarifa por línea)
 // ---------------------------------------------------------------
-function addItemRow() {
+function addItemRow(habitacion, descripcion, tarifa) {
   itemRowCounter++;
   const rowId = 'item_' + itemRowCounter;
+  const isCustom = descripcion !== undefined && !services.includes(descripcion);
   const wrap = document.createElement('div');
   wrap.className = 'form-row';
   wrap.id = rowId;
@@ -65,23 +73,23 @@ function addItemRow() {
     <div class="field" style="max-width:160px;">
       <label>Habitación</label>
       <select class="itemHabitacion">
-        ${rooms.map(r => `<option value="${r}">Habitación ${r}</option>`).join('')}
+        ${rooms.map(r => `<option value="${r}" ${r === habitacion ? 'selected' : ''}>Habitación ${r}</option>`).join('')}
       </select>
     </div>
     <div class="field" style="max-width:200px;">
       <label>Descripción / Servicio</label>
       <select class="itemDescripcion" onchange="toggleItemCustomDesc(this)">
-        ${services.map(s => `<option value="${s}">${s}</option>`).join('')}
-        <option value="__OTRO__">OTRO / OBSERVACIÓN...</option>
+        ${services.map(s => `<option value="${s}" ${s === descripcion ? 'selected' : ''}>${s}</option>`).join('')}
+        <option value="__OTRO__" ${isCustom ? 'selected' : ''}>OTRO / OBSERVACIÓN...</option>
       </select>
     </div>
-    <div class="field itemCustomWrap" style="display:none;max-width:200px;">
+    <div class="field itemCustomWrap" style="display:${isCustom ? 'block' : 'none'};max-width:200px;">
       <label>Especificar</label>
-      <input type="text" class="itemDescripcionCustom" placeholder="Ej. Reserva especial..." />
+      <input type="text" class="itemDescripcionCustom" placeholder="Ej. Reserva especial..." value="${isCustom ? escapeHtml(descripcion) : ''}" />
     </div>
     <div class="field" style="max-width:130px;">
       <label>Tarifa (USD)</label>
-      <input type="number" class="itemTarifa" min="0" step="0.01" placeholder="0.00" oninput="onItemsChanged()" />
+      <input type="number" class="itemTarifa" min="0" step="0.01" placeholder="0.00" value="${tarifa !== undefined ? tarifa : ''}" oninput="onItemsChanged()" />
     </div>
     <button class="icon-btn danger" type="button" onclick="removeItemRow('${rowId}')">Quitar</button>
   `;
@@ -128,9 +136,12 @@ function onItemsChanged() {
 }
 
 // ---------------------------------------------------------------
-// Pago mixto: una fila por cada método de pago usado en la venta
+// Pago mixto: una fila por cada método de pago usado en la venta.
+// El campo de N° de comprobante vive DENTRO de cada fila y solo se
+// muestra cuando el método seleccionado en esa fila lo requiere
+// (ej. transferencias), quedando visualmente junto a ese método.
 // ---------------------------------------------------------------
-function addPaymentRow(metodo, monto) {
+function addPaymentRow(metodo, monto, comprobante) {
   paymentRowCounter++;
   const rowId = 'pago_' + paymentRowCounter;
   const wrap = document.createElement('div');
@@ -138,15 +149,19 @@ function addPaymentRow(metodo, monto) {
   wrap.id = rowId;
   wrap.style.marginBottom = '10px';
   wrap.innerHTML = `
-    <div class="field" style="max-width:260px;">
+    <div class="field" style="max-width:230px;">
       <label>Método</label>
       <select class="pagoMetodo" onchange="onPaymentsChanged()">
         ${paymentMethodsFull.map(m => `<option value="${m.name}" ${m.name === metodo ? 'selected' : ''}>${m.name}</option>`).join('')}
       </select>
     </div>
-    <div class="field" style="max-width:140px;">
+    <div class="field" style="max-width:130px;">
       <label>Monto (USD)</label>
       <input type="number" class="pagoMonto" min="0" step="0.01" value="${monto !== undefined ? monto : ''}" oninput="onPaymentsChanged()" />
+    </div>
+    <div class="field pagoComprobanteWrap" style="display:none;max-width:190px;">
+      <label>N° Comprobante</label>
+      <input type="text" class="pagoComprobante" placeholder="N° de comprobante" value="${comprobante ? escapeHtml(comprobante) : ''}" />
     </div>
     <button class="icon-btn danger" type="button" onclick="removePaymentRow('${rowId}')">Quitar</button>
   `;
@@ -172,21 +187,30 @@ function collectPagos() {
   return pagos;
 }
 
+// El N° de comprobante sigue siendo un solo dato por venta: se toma el
+// primer valor no vacío entre las filas de pago (normalmente solo la
+// fila de transferencia tendrá uno escrito).
+function collectComprobante() {
+  const inputs = Array.from(document.querySelectorAll('.pagoComprobante'));
+  const withValue = inputs.find(inp => inp.value.trim());
+  return withValue ? withValue.value.trim() : '';
+}
+
 function onPaymentsChanged() {
   updateComprobanteVisibility();
   renderPaymentSummary();
 }
 
-// El campo de N° de comprobante solo se muestra si alguno de los
-// métodos de pago seleccionados es de tipo transferencia (definido
-// por el Gerente en Configuración → Métodos de pago).
+// Muestra/oculta el campo de comprobante en cada fila de pago según si
+// el método elegido EN ESA FILA está marcado por el Gerente como
+// "requiere comprobante" (Configuración → Métodos de pago).
 function updateComprobanteVisibility() {
-  const selectedNames = Array.from(document.querySelectorAll('.pagoMetodo')).map(s => s.value);
-  const needsComprobante = selectedNames.some(name => {
-    const pm = paymentMethodsFull.find(m => m.name === name);
-    return pm && pm.requiresComprobante;
+  document.querySelectorAll('#paymentRows > div').forEach(row => {
+    const metodo = row.querySelector('.pagoMetodo').value;
+    const pm = paymentMethodsFull.find(m => m.name === metodo);
+    const wrap = row.querySelector('.pagoComprobanteWrap');
+    if (wrap) wrap.style.display = (pm && pm.requiresComprobante) ? 'block' : 'none';
   });
-  document.getElementById('comprobanteWrap').style.display = needsComprobante ? 'block' : 'none';
 }
 
 function renderPaymentSummary() {
@@ -210,15 +234,26 @@ function renderPaymentSummary() {
 }
 
 // ---------------------------------------------------------------
-// Guardar / listar
+// Guardar (crear o editar) / listar
 // ---------------------------------------------------------------
+function resetFormBlank() {
+  document.getElementById('fFactura').value = '';
+  document.getElementById('fHora').value = new Date().toTimeString().slice(0, 5);
+  document.getElementById('itemRows').innerHTML = '';
+  itemRowCounter = 0;
+  addItemRow();
+  document.getElementById('paymentRows').innerHTML = '';
+  paymentRowCounter = 0;
+  addPaymentRow();
+}
+
 async function submitRecord() {
   const fecha = document.getElementById('fFecha').value;
   const hora = document.getElementById('fHora').value;
   const factura = document.getElementById('fFactura').value;
-  const comprobante = document.getElementById('fComprobante').value;
   const items = collectItems();
   const pagos = collectPagos();
+  const comprobante = collectComprobante();
 
   if (items.length === 0) {
     return showMsg('<div class="error-msg">Agrega al menos una habitación o servicio con su tarifa.</div>');
@@ -227,32 +262,80 @@ async function submitRecord() {
     return showMsg('<div class="error-msg">Indica al menos un método de pago con su monto.</div>');
   }
 
-  const res = await fetch('/api/records', {
-    method: 'POST',
+  const isEdit = !!editingRecordId;
+  const url = isEdit ? '/api/records/mine/' + editingRecordId : '/api/records';
+  const method = isEdit ? 'PUT' : 'POST';
+  const body = isEdit
+    ? { items, factura, comprobante, pagos, hora }
+    : { fecha, hora, items, factura, comprobante, pagos };
+
+  const res = await fetch(url, {
+    method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fecha, hora, items, factura, comprobante, pagos })
+    body: JSON.stringify(body)
   });
   const data = await res.json();
   if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
 
-  showMsg('<div class="ok-msg">Venta guardada correctamente.</div>');
+  showMsg(isEdit
+    ? '<div class="ok-msg">Venta actualizada correctamente.</div>'
+    : '<div class="ok-msg">Venta guardada correctamente.</div>');
 
-  document.getElementById('fFactura').value = '';
-  document.getElementById('fComprobante').value = '';
-  document.getElementById('fHora').value = new Date().toTimeString().slice(0, 5);
-  document.getElementById('itemRows').innerHTML = '';
-  itemRowCounter = 0;
-  addItemRow();
-  document.getElementById('paymentRows').innerHTML = '';
-  paymentRowCounter = 0;
-  addPaymentRow();
+  editingRecordId = null;
+  document.getElementById('saveBtnLabel').textContent = 'Guardar venta';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+  resetFormBlank();
 
   await loadMine();
+}
+
+function editMine(id) {
+  const r = myRecords.find(x => x.id === id);
+  if (!r) return;
+  editingRecordId = id;
+
+  document.getElementById('fHora').value = r.hora || '';
+  document.getElementById('fFactura').value = r.factura || '';
+
+  document.getElementById('itemRows').innerHTML = '';
+  itemRowCounter = 0;
+  if (r.items && r.items.length) {
+    r.items.forEach(it => addItemRow(it.habitacion, it.descripcion, it.tarifa));
+  } else {
+    addItemRow();
+  }
+
+  document.getElementById('paymentRows').innerHTML = '';
+  paymentRowCounter = 0;
+  if (r.pagos && r.pagos.length) {
+    let comprobanteAssigned = false;
+    r.pagos.forEach(p => {
+      const pm = paymentMethodsFull.find(m => m.name === p.metodo);
+      const useComprobante = (!comprobanteAssigned && pm && pm.requiresComprobante) ? r.comprobante : '';
+      if (useComprobante) comprobanteAssigned = true;
+      addPaymentRow(p.metodo, p.monto, useComprobante);
+    });
+  } else {
+    addPaymentRow();
+  }
+
+  document.getElementById('saveBtnLabel').textContent = 'Guardar cambios';
+  document.getElementById('cancelEditBtn').style.display = 'inline-block';
+  showMsg(`<div class="ok-msg">Editando la venta N° ${id}. Modifica lo necesario y presiona "Guardar cambios" (la fecha no se puede cambiar).</div>`);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function cancelEditMine() {
+  editingRecordId = null;
+  document.getElementById('saveBtnLabel').textContent = 'Guardar venta';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+  resetFormBlank();
 }
 
 async function loadMine() {
   const res = await fetch('/api/records/mine');
   const rows = await res.json();
+  myRecords = rows;
   const body = document.getElementById('myTableBody');
   const empty = document.getElementById('myEmpty');
 
@@ -281,7 +364,10 @@ async function loadMine() {
       <td>${pagosHtml}</td>
       <td>${r.factura || '—'}</td>
       <td>${r.comprobante || '—'}</td>
-      <td><button class="icon-btn danger" onclick="deleteMine(${r.id})">Eliminar</button></td>
+      <td>
+        <button class="icon-btn" onclick="editMine(${r.id})">Editar</button>
+        <button class="icon-btn danger" onclick="deleteMine(${r.id})">Eliminar</button>
+      </td>
     </tr>`;
   }).join('');
   document.getElementById('myTotal').textContent = '$' + total.toFixed(2);
@@ -290,6 +376,7 @@ async function loadMine() {
 async function deleteMine(id) {
   if (!confirm('¿Eliminar esta venta de tu turno actual?')) return;
   await fetch('/api/records/mine/' + id, { method: 'DELETE' });
+  if (editingRecordId === id) cancelEditMine();
   await loadMine();
 }
 

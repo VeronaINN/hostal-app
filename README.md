@@ -191,10 +191,11 @@ de configuración) queden funcionando:
   tarifa total de la venta se calcula sola sumando cada fila.
 - **N° de Factura:** un solo campo por venta (aplica a toda la
   venta, sin importar cuántas habitaciones incluya).
-- **N° de Comprobante:** este campo solo aparece cuando el método de
-  pago elegido es de tipo transferencia (lo define el Gerente en
-  Configuración). Si el cliente paga en efectivo o con tarjeta, el
-  campo permanece oculto.
+- **N° de Comprobante:** este campo aparece **junto al método de
+  pago** dentro de la sección "Forma de pago" (no junto a la
+  factura), y solo se muestra en la fila cuyo método está marcado
+  como transferencia. Si el cliente paga en efectivo o con tarjeta,
+  esa fila no muestra el campo.
 - **Pago mixto:** en la sección "Forma de pago" agregas una fila por
   cada método que usó el cliente (por ejemplo, $10 en efectivo + $5
   con tarjeta). El sistema muestra en vivo si la suma de los pagos ya
@@ -204,8 +205,11 @@ de configuración) queden funcionando:
 - Solo ves las ventas que tú mismo cargaste **en el día actual**. No
   hay acceso a totales del mes, histórico de otros días ni
   configuración del sistema.
-- Puedes corregir o eliminar una venta tuya mientras siga siendo el
-  mismo día (por ejemplo, si te equivocaste al tipear).
+- Puedes **editar o eliminar** una venta tuya mientras siga siendo el
+  mismo día (por ejemplo, si te equivocaste al tipear). El botón
+  "Editar" carga la venta en el mismo formulario de arriba; al
+  terminar, el botón dice "Guardar cambios" en vez de "Guardar
+  venta". Puedes cancelar la edición en cualquier momento.
 
 ### Vista Gerente
 - **Tiempo real:** apenas un empleado guarda, edita o elimina un

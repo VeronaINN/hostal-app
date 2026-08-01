@@ -8,6 +8,12 @@
 
 let cajaPeriod = 'hoy';
 let dashboardData = null;
+let historyRecords = [];
+let rooms = [];
+let services = [];
+let paymentMethodsFull = []; // [{ name, requiresComprobante }]
+let editItemRowCounter = 0;
+let editPaymentRowCounter = 0;
 
 async function boot() {
   const sessionRes = await fetch('/api/session');
@@ -17,8 +23,19 @@ async function boot() {
     return;
   }
   await loadConfigLists();
+  await loadFullConfig();
   await loadDashboard();
   connectLive();
+}
+
+// Configuración completa (no solo nombres) — necesaria para armar los
+// selects de habitación/servicio/método de pago del editor de ventas.
+async function loadFullConfig() {
+  const res = await fetch('/api/config');
+  const cfg = await res.json();
+  rooms = cfg.rooms;
+  services = cfg.services;
+  paymentMethodsFull = cfg.paymentMethods;
 }
 
 // ---------------------------------------------------------------
@@ -47,6 +64,7 @@ function switchTab(tab) {
   document.getElementById('viewDash').style.display = tab === 'dash' ? 'block' : 'none';
   document.getElementById('viewHist').style.display = tab === 'hist' ? 'block' : 'none';
   document.getElementById('viewConfig').style.display = tab === 'config' ? 'block' : 'none';
+  if (tab !== 'hist') cancelEdit();
   if (tab === 'hist') loadHistory();
   if (tab === 'config') loadConfigPanel();
 }
@@ -153,6 +171,7 @@ async function loadHistory() {
   const qs = buildFilterQuery();
   const res = await fetch('/api/records?' + qs);
   const rows = await res.json();
+  historyRecords = rows;
   const body = document.getElementById('hBody');
   const empty = document.getElementById('hEmpty');
   document.getElementById('hCount').textContent = `(${rows.length} registro${rows.length === 1 ? '' : 's'})`;
@@ -185,6 +204,7 @@ async function loadHistory() {
       <td>${r.comprobante || '—'}</td>
       <td>${r.empleado}</td>
       <td>
+        <button class="icon-btn" onclick="openEdit(${r.id})">Editar</button>
         <button class="icon-btn danger" onclick="deleteRecord(${r.id})">Eliminar</button>
       </td>
     </tr>`;
@@ -195,6 +215,7 @@ async function loadHistory() {
 async function deleteRecord(id) {
   if (!confirm('¿Eliminar este registro del histórico? Esta acción no se puede deshacer.')) return;
   await fetch('/api/records/' + id, { method: 'DELETE' });
+  if (String(document.getElementById('editIdLabel').textContent) === String(id)) cancelEdit();
   await loadHistory();
   await loadDashboard();
 }
@@ -202,6 +223,236 @@ async function deleteRecord(id) {
 function exportExcel() {
   const qs = buildFilterQuery();
   window.location.href = '/api/export?' + qs;
+}
+
+// ---------------------------------------------------------------
+// EDITAR VENTA (cualquier venta, de cualquier día — solo Gerente)
+// Reutiliza el mismo patrón de filas dinámicas del formulario del
+// empleado: varios ítems (habitación+servicio+tarifa) y varios pagos,
+// con el N° de comprobante dentro de la fila de pago que lo requiere.
+// ---------------------------------------------------------------
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function addEditItemRow(habitacion, descripcion, tarifa) {
+  editItemRowCounter++;
+  const rowId = 'eitem_' + editItemRowCounter;
+  const isCustom = descripcion !== undefined && !services.includes(descripcion);
+  const wrap = document.createElement('div');
+  wrap.className = 'form-row';
+  wrap.id = rowId;
+  wrap.style.marginBottom = '10px';
+  wrap.innerHTML = `
+    <div class="field" style="max-width:160px;">
+      <label>Habitación</label>
+      <select class="eItemHabitacion">
+        ${rooms.map(r => `<option value="${r}" ${r === habitacion ? 'selected' : ''}>Habitación ${r}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="max-width:200px;">
+      <label>Descripción / Servicio</label>
+      <select class="eItemDescripcion" onchange="toggleEditItemCustomDesc(this)">
+        ${services.map(s => `<option value="${s}" ${s === descripcion ? 'selected' : ''}>${s}</option>`).join('')}
+        <option value="__OTRO__" ${isCustom ? 'selected' : ''}>OTRO / OBSERVACIÓN...</option>
+      </select>
+    </div>
+    <div class="field eItemCustomWrap" style="display:${isCustom ? 'block' : 'none'};max-width:200px;">
+      <label>Especificar</label>
+      <input type="text" class="eItemDescripcionCustom" value="${isCustom ? escapeHtml(descripcion) : ''}" />
+    </div>
+    <div class="field" style="max-width:130px;">
+      <label>Tarifa (USD)</label>
+      <input type="number" class="eItemTarifa" min="0" step="0.01" value="${tarifa !== undefined ? tarifa : ''}" oninput="onEditItemsChanged()" />
+    </div>
+    <button class="icon-btn danger" type="button" onclick="removeEditItemRow('${rowId}')">Quitar</button>
+  `;
+  document.getElementById('eItemRows').appendChild(wrap);
+  onEditItemsChanged();
+}
+
+function removeEditItemRow(rowId) {
+  const rows = document.querySelectorAll('#eItemRows > div');
+  if (rows.length <= 1) return;
+  document.getElementById(rowId).remove();
+  onEditItemsChanged();
+}
+
+function toggleEditItemCustomDesc(selectEl) {
+  const wrap = selectEl.closest('.form-row').querySelector('.eItemCustomWrap');
+  wrap.style.display = selectEl.value === '__OTRO__' ? 'block' : 'none';
+}
+
+function collectEditItems() {
+  const rows = document.querySelectorAll('#eItemRows > div');
+  const items = [];
+  rows.forEach(row => {
+    const habitacion = row.querySelector('.eItemHabitacion').value;
+    let descripcion = row.querySelector('.eItemDescripcion').value;
+    if (descripcion === '__OTRO__') descripcion = row.querySelector('.eItemDescripcionCustom').value.trim();
+    const tarifa = Number(row.querySelector('.eItemTarifa').value);
+    if (habitacion && descripcion && tarifa > 0) items.push({ habitacion, descripcion, tarifa });
+  });
+  return items;
+}
+
+function editItemsTotal() {
+  return collectEditItems().reduce((acc, it) => acc + it.tarifa, 0);
+}
+
+function onEditItemsChanged() {
+  document.getElementById('eItemsTotalLabel').textContent = money(editItemsTotal());
+  renderEditPaymentSummary();
+}
+
+function addEditPaymentRow(metodo, monto, comprobante) {
+  editPaymentRowCounter++;
+  const rowId = 'epago_' + editPaymentRowCounter;
+  const wrap = document.createElement('div');
+  wrap.className = 'form-row';
+  wrap.id = rowId;
+  wrap.style.marginBottom = '10px';
+  wrap.innerHTML = `
+    <div class="field" style="max-width:230px;">
+      <label>Método</label>
+      <select class="ePagoMetodo" onchange="onEditPaymentsChanged()">
+        ${paymentMethodsFull.map(m => `<option value="${m.name}" ${m.name === metodo ? 'selected' : ''}>${m.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="max-width:130px;">
+      <label>Monto (USD)</label>
+      <input type="number" class="ePagoMonto" min="0" step="0.01" value="${monto !== undefined ? monto : ''}" oninput="onEditPaymentsChanged()" />
+    </div>
+    <div class="field ePagoComprobanteWrap" style="display:none;max-width:190px;">
+      <label>N° Comprobante</label>
+      <input type="text" class="ePagoComprobante" value="${comprobante ? escapeHtml(comprobante) : ''}" />
+    </div>
+    <button class="icon-btn danger" type="button" onclick="removeEditPaymentRow('${rowId}')">Quitar</button>
+  `;
+  document.getElementById('ePaymentRows').appendChild(wrap);
+  onEditPaymentsChanged();
+}
+
+function removeEditPaymentRow(rowId) {
+  const rows = document.querySelectorAll('#ePaymentRows > div');
+  if (rows.length <= 1) return;
+  document.getElementById(rowId).remove();
+  onEditPaymentsChanged();
+}
+
+function collectEditPagos() {
+  const rows = document.querySelectorAll('#ePaymentRows > div');
+  const pagos = [];
+  rows.forEach(row => {
+    const metodo = row.querySelector('.ePagoMetodo').value;
+    const monto = Number(row.querySelector('.ePagoMonto').value);
+    if (metodo && monto > 0) pagos.push({ metodo, monto });
+  });
+  return pagos;
+}
+
+function collectEditComprobante() {
+  const inputs = Array.from(document.querySelectorAll('.ePagoComprobante'));
+  const withValue = inputs.find(inp => inp.value.trim());
+  return withValue ? withValue.value.trim() : '';
+}
+
+function onEditPaymentsChanged() {
+  document.querySelectorAll('#ePaymentRows > div').forEach(row => {
+    const metodo = row.querySelector('.ePagoMetodo').value;
+    const pm = paymentMethodsFull.find(m => m.name === metodo);
+    const wrap = row.querySelector('.ePagoComprobanteWrap');
+    if (wrap) wrap.style.display = (pm && pm.requiresComprobante) ? 'block' : 'none';
+  });
+  renderEditPaymentSummary();
+}
+
+function renderEditPaymentSummary() {
+  const pagos = collectEditPagos();
+  const sum = pagos.reduce((acc, p) => acc + p.monto, 0);
+  const tarifa = editItemsTotal();
+  const box = document.getElementById('ePaymentSummary');
+  if (!tarifa) {
+    box.innerHTML = `Pagado hasta ahora: <b>${money(sum)}</b>`;
+    return;
+  }
+  const diff = tarifa - sum;
+  if (Math.abs(diff) < 0.01) {
+    box.innerHTML = `<span style="color:var(--success);font-weight:600;">✓ Pagos completos: ${money(sum)} — coincide con la tarifa total de ${money(tarifa)}</span>`;
+  } else if (diff > 0) {
+    box.innerHTML = `<span style="color:var(--danger);font-weight:600;">Pagado: ${money(sum)} — faltan ${money(diff)} para cubrir la tarifa total de ${money(tarifa)}</span>`;
+  } else {
+    box.innerHTML = `<span style="color:var(--danger);font-weight:600;">Pagado: ${money(sum)} — excede la tarifa total de ${money(tarifa)} por ${money(Math.abs(diff))}</span>`;
+  }
+}
+
+async function openEdit(id) {
+  await loadFullConfig(); // datos frescos de habitaciones/servicios/métodos
+  const r = historyRecords.find(x => x.id === id);
+  if (!r) return;
+
+  document.getElementById('editIdLabel').textContent = r.id;
+  document.getElementById('eFecha').value = r.fecha;
+  document.getElementById('eHora').value = r.hora || '';
+  document.getElementById('eEmpleado').value = r.empleado || '';
+  document.getElementById('eFactura').value = r.factura || '';
+
+  document.getElementById('eItemRows').innerHTML = '';
+  editItemRowCounter = 0;
+  if (r.items && r.items.length) {
+    r.items.forEach(it => addEditItemRow(it.habitacion, it.descripcion, it.tarifa));
+  } else {
+    addEditItemRow();
+  }
+
+  document.getElementById('ePaymentRows').innerHTML = '';
+  editPaymentRowCounter = 0;
+  if (r.pagos && r.pagos.length) {
+    let comprobanteAssigned = false;
+    r.pagos.forEach(p => {
+      const pm = paymentMethodsFull.find(m => m.name === p.metodo);
+      const useComprobante = (!comprobanteAssigned && pm && pm.requiresComprobante) ? r.comprobante : '';
+      if (useComprobante) comprobanteAssigned = true;
+      addEditPaymentRow(p.metodo, p.monto, useComprobante);
+    });
+  } else {
+    addEditPaymentRow();
+  }
+
+  document.getElementById('editCard').style.display = 'block';
+  document.getElementById('editCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelEdit() {
+  document.getElementById('editCard').style.display = 'none';
+}
+
+async function saveEdit() {
+  const id = document.getElementById('editIdLabel').textContent;
+  const fecha = document.getElementById('eFecha').value;
+  const hora = document.getElementById('eHora').value;
+  const empleado = document.getElementById('eEmpleado').value.trim();
+  const factura = document.getElementById('eFactura').value;
+  const items = collectEditItems();
+  const pagos = collectEditPagos();
+  const comprobante = collectEditComprobante();
+
+  if (items.length === 0) return showMsg('<div class="error-msg">Agrega al menos una habitación o servicio con su tarifa.</div>');
+  if (pagos.length === 0) return showMsg('<div class="error-msg">Indica al menos un método de pago con su monto.</div>');
+  if (!empleado) return showMsg('<div class="error-msg">El campo Empleado (turno) no puede quedar vacío.</div>');
+
+  const res = await fetch('/api/records/' + id, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fecha, hora, empleado, factura, comprobante, items, pagos })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+
+  showMsg('<div class="ok-msg">Venta actualizada correctamente.</div>');
+  cancelEdit();
+  await loadHistory();
+  await loadDashboard();
 }
 
 // ---------------------------------------------------------------

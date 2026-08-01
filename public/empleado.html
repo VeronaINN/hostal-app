@@ -39,10 +39,6 @@
           <label>N° Factura</label>
           <input type="text" id="fFactura" placeholder="Opcional" />
         </div>
-        <div class="field" id="comprobanteWrap" style="max-width:200px;display:none;">
-          <label>N° Comprobante (transferencia)</label>
-          <input type="text" id="fComprobante" placeholder="N° de comprobante" />
-        </div>
       </div>
 
       <hr class="divider" />
@@ -55,14 +51,16 @@
 
       <hr class="divider" />
       <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin-bottom:10px;">
-        Forma de pago — si el cliente pagó con más de un método, agrega una fila por cada uno
+        Forma de pago — si el cliente pagó con más de un método, agrega una fila por cada uno.
+        El campo de N° de comprobante aparece junto al método cuando corresponde a una transferencia.
       </label>
       <div id="paymentRows"></div>
       <button class="btn-secondary" style="margin-top:6px;" onclick="addPaymentRow()">+ Agregar otro método de pago</button>
       <div id="paymentSummary" class="small-text" style="margin-top:12px;"></div>
 
       <hr class="divider" />
-      <button class="btn-primary" style="max-width:220px;" onclick="submitRecord()">Guardar venta</button>
+      <button class="btn-primary" style="max-width:220px;" onclick="submitRecord()"><span id="saveBtnLabel">Guardar venta</span></button>
+      <button class="btn-secondary" id="cancelEditBtn" style="max-width:180px;display:none;" onclick="cancelEditMine()">Cancelar edición</button>
     </div>
 
     <div class="card">
