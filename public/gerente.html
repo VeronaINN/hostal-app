@@ -25,6 +25,7 @@
     <div class="pill-tabs">
       <button id="tabDash" class="active" onclick="switchTab('dash')">Dashboard</button>
       <button id="tabHist" onclick="switchTab('hist')">Histórico / Reportes</button>
+      <button id="tabCierres" onclick="switchTab('cierres')">Cierres de turno</button>
       <button id="tabConfig" onclick="switchTab('config')">Configuración</button>
     </div>
 
@@ -57,6 +58,21 @@
           <button onclick="setCajaPeriod('semana')">Semana</button>
           <button onclick="setCajaPeriod('mes')">Mes</button>
         </div>
+        <div class="grid-3">
+          <div class="metric">
+            <div class="label">Efectivo</div>
+            <div class="value" id="catEfectivo">$0.00</div>
+          </div>
+          <div class="metric">
+            <div class="label">Transferencia</div>
+            <div class="value" id="catTransferencia">$0.00</div>
+          </div>
+          <div class="metric">
+            <div class="label">Tarjeta</div>
+            <div class="value" id="catTarjeta">$0.00</div>
+          </div>
+        </div>
+        <hr class="divider" />
         <div class="grid-2">
           <div class="metric">
             <div class="label">Físico / Efectivo en caja</div>
@@ -68,6 +84,7 @@
           </div>
         </div>
         <hr class="divider" />
+        <div class="small-text" style="margin-bottom:8px;">Detalle por cada método configurado</div>
         <div class="table-wrap">
           <table class="data">
             <thead><tr><th>Medio de pago</th><th>Monto</th></tr></thead>
@@ -94,7 +111,8 @@
         </div>
 
         <div class="card">
-          <h2><span class="num">✓</span> Auditoría de cierres de turno (hoy)</h2>
+          <h2><span class="num">✓</span> Ventas por empleado (hoy, en vivo)</h2>
+          <div class="small-text" style="margin-bottom:10px;">Calculado en tiempo real desde las ventas — para el cierre formal de cada empleado, ve la pestaña "Cierres de turno".</div>
           <div class="table-wrap">
             <table class="data">
               <thead><tr><th>Empleado</th><th>N° reg.</th><th>Efectivo</th><th>Bancos</th><th>Total</th></tr></thead>
@@ -173,6 +191,39 @@
         <div id="hEmpty" class="empty-state" style="display:none;">No hay registros con los filtros seleccionados.</div>
         <hr class="divider" />
         <div class="small-text">Total filtrado: <b id="hTotal">$0.00</b></div>
+      </div>
+    </div>
+
+    <!-- ===================== CIERRES DE TURNO ===================== -->
+    <div id="viewCierres" style="display:none;">
+      <div class="card">
+        <h2><span class="num">⌕</span> Filtros</h2>
+        <div class="form-row">
+          <div class="field"><label>Desde</label><input type="date" id="czFrom" /></div>
+          <div class="field"><label>Hasta</label><input type="date" id="czTo" /></div>
+          <div class="field">
+            <label>Empleado</label>
+            <select id="czEmployee"><option value="">Todos</option></select>
+          </div>
+          <button class="btn-secondary" onclick="loadShiftCloses()">Aplicar filtros</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="num">✓</span> Cierres registrados <span class="small-text" id="czCount"></span></h2>
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>N°</th><th>Fecha</th><th>Hora</th><th>Empleado</th>
+                <th>Efectivo (sistema)</th><th>Transferencia</th><th>Tarjeta</th><th>Total</th>
+                <th>Efectivo contado</th><th>Diferencia</th><th>Notas</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="czBody"></tbody>
+          </table>
+        </div>
+        <div id="czEmpty" class="empty-state" style="display:none;">No hay cierres de turno con los filtros seleccionados.</div>
       </div>
     </div>
 

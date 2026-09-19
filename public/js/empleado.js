@@ -31,6 +31,7 @@ async function boot() {
 
   await loadConfig();
   await loadMine();
+  await loadShiftSummary();
 }
 
 async function loadConfig() {
@@ -287,6 +288,7 @@ async function submitRecord() {
   resetFormBlank();
 
   await loadMine();
+  await loadShiftSummary();
 }
 
 function editMine(id) {
@@ -378,6 +380,82 @@ async function deleteMine(id) {
   await fetch('/api/records/mine/' + id, { method: 'DELETE' });
   if (editingRecordId === id) cancelEditMine();
   await loadMine();
+  await loadShiftSummary();
+}
+
+// ---------------------------------------------------------------
+// CIERRE DE TURNO
+// ---------------------------------------------------------------
+async function loadShiftSummary() {
+  const res = await fetch('/api/shift-summary/mine');
+  const data = await res.json();
+
+  document.getElementById('shiftEfectivo').textContent = '$' + data.breakdown.efectivo.toFixed(2);
+  document.getElementById('shiftTransferencia').textContent = '$' + data.breakdown.transferencia.toFixed(2);
+  document.getElementById('shiftTarjeta').textContent = '$' + data.breakdown.tarjeta.toFixed(2);
+  document.getElementById('shiftTotal').textContent = '$' + data.breakdown.total.toFixed(2);
+
+  const openForm = document.getElementById('shiftOpenForm');
+  const closedInfo = document.getElementById('shiftClosedInfo');
+
+  if (data.cierre) {
+    openForm.style.display = 'none';
+    const c = data.cierre;
+    const diffLabel = Math.abs(c.diferencia) < 0.01
+      ? '<span style="color:var(--success);font-weight:600;">✓ Cuadra exacto</span>'
+      : c.diferencia > 0
+        ? `<span style="color:var(--success);font-weight:600;">Sobran $${c.diferencia.toFixed(2)}</span>`
+        : `<span style="color:var(--danger);font-weight:600;">Faltan $${Math.abs(c.diferencia).toFixed(2)}</span>`;
+    closedInfo.style.display = 'block';
+    closedInfo.innerHTML = `
+      <div class="ok-msg" style="margin-bottom:12px;">Turno cerrado hoy a las ${c.hora}.</div>
+      <div class="grid-2">
+        <div class="metric">
+          <div class="label">Efectivo contado</div>
+          <div class="value small">$${c.efectivoDeclarado.toFixed(2)}</div>
+          <div class="sub">Sistema calculó: $${c.efectivoSistema.toFixed(2)}</div>
+        </div>
+        <div class="metric">
+          <div class="label">Diferencia</div>
+          <div class="value small">${diffLabel}</div>
+        </div>
+      </div>
+      ${c.notas ? `<div class="small-text" style="margin-top:10px;">Notas: ${escapeHtml(c.notas)}</div>` : ''}
+      <button class="btn-secondary" style="margin-top:14px;" onclick="reopenShift(${c.id})">Reabrir cierre (corregir)</button>
+    `;
+  } else {
+    closedInfo.style.display = 'none';
+    closedInfo.innerHTML = '';
+    openForm.style.display = 'block';
+  }
+}
+
+async function closeShift() {
+  const efectivoDeclarado = document.getElementById('shiftEfectivoDeclarado').value;
+  const notas = document.getElementById('shiftNotas').value;
+
+  if (efectivoDeclarado === '') {
+    return showMsg('<div class="error-msg">Indica cuánto efectivo contaste en caja.</div>');
+  }
+
+  const res = await fetch('/api/shift-close', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ efectivoDeclarado, notas })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+
+  showMsg('<div class="ok-msg">Turno cerrado correctamente.</div>');
+  document.getElementById('shiftEfectivoDeclarado').value = '';
+  document.getElementById('shiftNotas').value = '';
+  await loadShiftSummary();
+}
+
+async function reopenShift(id) {
+  if (!confirm('¿Reabrir el cierre de turno para corregirlo?')) return;
+  await fetch('/api/shift-close/mine/' + id, { method: 'DELETE' });
+  await loadShiftSummary();
 }
 
 async function logout() {

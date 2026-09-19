@@ -31,7 +31,9 @@ const DB_PATH = path.join(__dirname, "..", "data", "db.json");
 function defaultDB() {
   return {
     nextRecordId: 1,
+    nextShiftCloseId: 1,
     records: [], // Registro operativo diario (ventas — cada una puede tener varias habitaciones/servicios)
+    shiftCloses: [], // Cierres de turno declarados por los empleados (para auditoría del Gerente)
     employees: [
       { name: "David", pinHash: bcrypt.hashSync("1234", 8), active: true },
     ],
@@ -69,6 +71,15 @@ function ensureDB() {
 // que el negocio pierda su histórico al actualizar la aplicación.
 function migrateDB(db) {
   let changed = false;
+
+  if (!Array.isArray(db.shiftCloses)) {
+    db.shiftCloses = [];
+    changed = true;
+  }
+  if (db.nextShiftCloseId === undefined) {
+    db.nextShiftCloseId = 1;
+    changed = true;
+  }
 
   if (db.paymentMethods.length && typeof db.paymentMethods[0] === "string") {
     db.paymentMethods = db.paymentMethods.map((name) => ({
@@ -127,4 +138,10 @@ function nextRecordId(db) {
   return id;
 }
 
-module.exports = { getDB, saveDB, nextRecordId, DB_PATH };
+function nextShiftCloseId(db) {
+  const id = db.nextShiftCloseId || 1;
+  db.nextShiftCloseId = id + 1;
+  return id;
+}
+
+module.exports = { getDB, saveDB, nextRecordId, nextShiftCloseId, DB_PATH };

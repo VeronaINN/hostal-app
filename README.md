@@ -210,6 +210,14 @@ de configuración) queden funcionando:
   "Editar" carga la venta en el mismo formulario de arriba; al
   terminar, el botón dice "Guardar cambios" en vez de "Guardar
   venta". Puedes cancelar la edición en cualquier momento.
+- **Cierre de turno:** en la tarjeta "Cierre de turno" ves en todo
+  momento cuánto llevas cobrado hoy en Efectivo, Transferencia y
+  Tarjeta. Al terminar tu turno, cuenta el efectivo físico de la caja
+  y regístralo con el botón "Cerrar turno" — el sistema calcula
+  automáticamente la diferencia contra lo que él mismo registró (útil
+  para detectar si sobra o falta dinero). Una vez cerrado, el turno
+  queda guardado para que el Gerente lo revise; si te equivocaste,
+  puedes usar "Reabrir cierre" para corregirlo el mismo día.
 
 ### Vista Gerente
 - **Tiempo real:** apenas un empleado guarda, edita o elimina un
@@ -217,12 +225,18 @@ de configuración) queden funcionando:
   histórico del Gerente se actualizan solos, sin recargar la página.
   Cuando la conexión en vivo está activa, arriba a la derecha aparece
   la etiqueta **"● En vivo"**.
-- **Dashboard:** recaudación de hoy/semana/mes, corte de caja
-  (cuánto debe haber en efectivo físico vs. cuánto entró a
-  Pichincha/Produbanco/tarjeta — sumando correctamente los pagos
-  mixtos), ocupación por tipo de servicio (noches vs. horas/momento)
-  y auditoría de cierres de turno por empleado para conciliar la caja
-  del día.
+- **Dashboard:** recaudación de hoy/semana/mes, y un **desglose por
+  Efectivo / Transferencia / Tarjeta** (además del detalle método por
+  método, por si tienes más de una transferencia bancaria), ocupación
+  por tipo de servicio (noches vs. horas/momento), y las ventas de
+  hoy agrupadas por empleado en tiempo real.
+- **Cierres de turno:** pestaña nueva con el historial de todos los
+  cierres que los empleados han registrado — fecha, hora, empleado,
+  lo que el sistema calculó por cada método, el efectivo que el
+  empleado contó físicamente, y la diferencia entre ambos (en verde
+  si cuadra o sobra, en rojo si falta). Filtra por fecha o empleado
+  igual que en Histórico, y puedes eliminar un cierre si fue un
+  error.
 - **Histórico / Reportes:** filtra por rango de fechas, empleado,
   método de pago o habitación, edita o elimina cualquier registro, y
   exporta el resultado filtrado a un archivo `.xlsx` con el botón

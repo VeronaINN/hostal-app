@@ -17,7 +17,7 @@ const express = require("express");
 const session = require("express-session");
 const bcrypt = require("bcryptjs");
 const XLSX = require("xlsx");
-const { getDB, saveDB, nextRecordId } = require("./db/store");
+const { getDB, saveDB, nextRecordId, nextShiftCloseId } = require("./db/store");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -103,6 +103,31 @@ function startOfMonth(dateStr) {
 
 function isNocheServicio(desc) {
   return (desc || "").toUpperCase().includes("NOCHE");
+}
+
+// Agrupa un método de pago en una de 3 categorías para los resúmenes
+// de caja: EFECTIVO (dinero físico), TRANSFERENCIA (métodos marcados
+// por el Gerente como "requiere comprobante") y TARJETA (cualquier
+// otro método que no sea efectivo ni transferencia, ej. tarjeta de
+// crédito/débito u otros que el Gerente agregue).
+function categorizeMethod(metodoName, paymentMethods) {
+  if ((metodoName || "").toUpperCase().includes("EFECTIVO")) return "efectivo";
+  const pm = (paymentMethods || []).find((m) => m.name === metodoName);
+  if (pm && pm.requiresComprobante) return "transferencia";
+  return "tarjeta";
+}
+
+// Suma los pagos de una lista de ventas en las 3 categorías de arriba.
+function categorizedBreakdown(records, paymentMethods) {
+  const out = { efectivo: 0, transferencia: 0, tarjeta: 0, total: 0 };
+  for (const r of records) {
+    for (const p of r.pagos || []) {
+      const cat = categorizeMethod(p.metodo, paymentMethods);
+      out[cat] += p.monto;
+      out.total += p.monto;
+    }
+  }
+  return out;
 }
 
 // Valida los ítems de una venta (una venta puede incluir varias
@@ -325,6 +350,111 @@ app.delete("/api/records/mine/:id", requireEmployee, (req, res) => {
 });
 
 // -------------------------------------------------------------------
+// CIERRE DE TURNO (Empleado)
+// Al terminar su turno, el empleado cuenta el efectivo físico y lo
+// compara contra lo que el sistema calculó a partir de sus propias
+// ventas del día. Queda guardado para que el Gerente lo audite.
+// -------------------------------------------------------------------
+
+// Resumen en vivo del turno actual del empleado (siempre disponible,
+// se haya cerrado el turno o no) + el cierre de hoy si ya existe.
+app.get("/api/shift-summary/mine", requireEmployee, (req, res) => {
+  const db = getDB();
+  const today = todayStr();
+  const myRecordsToday = db.records.filter(
+    (r) => r.empleado === req.session.employeeName && r.fecha === today
+  );
+  const breakdown = categorizedBreakdown(myRecordsToday, db.paymentMethods);
+  const cierre = db.shiftCloses.find(
+    (c) => c.empleado === req.session.employeeName && c.fecha === today
+  ) || null;
+  res.json({ fecha: today, breakdown, cierre });
+});
+
+app.post("/api/shift-close", requireEmployee, (req, res) => {
+  const db = getDB();
+  const today = todayStr();
+
+  const yaExiste = db.shiftCloses.find(
+    (c) => c.empleado === req.session.employeeName && c.fecha === today
+  );
+  if (yaExiste) {
+    return res.status(400).json({ error: "Ya registraste el cierre de turno de hoy. Reábrelo si necesitas corregirlo." });
+  }
+
+  const { efectivoDeclarado, notas } = req.body;
+  const efectivoNum = Number(efectivoDeclarado);
+  if (Number.isNaN(efectivoNum) || efectivoNum < 0) {
+    return res.status(400).json({ error: "Indica el monto de efectivo contado (puede ser 0)" });
+  }
+
+  const myRecordsToday = db.records.filter(
+    (r) => r.empleado === req.session.employeeName && r.fecha === today
+  );
+  const breakdown = categorizedBreakdown(myRecordsToday, db.paymentMethods);
+
+  const cierre = {
+    id: nextShiftCloseId(db),
+    fecha: today,
+    hora: new Date().toTimeString().slice(0, 5),
+    empleado: req.session.employeeName,
+    efectivoSistema: breakdown.efectivo,
+    transferenciaSistema: breakdown.transferencia,
+    tarjetaSistema: breakdown.tarjeta,
+    totalSistema: breakdown.total,
+    efectivoDeclarado: efectivoNum,
+    diferencia: Math.round((efectivoNum - breakdown.efectivo) * 100) / 100,
+    notas: notas ? String(notas) : "",
+    createdAt: new Date().toISOString(),
+  };
+  db.shiftCloses.push(cierre);
+  saveDB(db);
+  broadcastUpdate("shift-close-created", cierre);
+  res.status(201).json(cierre);
+});
+
+// Permite al empleado deshacer el cierre de HOY si se equivocó, y
+// volver a hacerlo después.
+app.delete("/api/shift-close/mine/:id", requireEmployee, (req, res) => {
+  const db = getDB();
+  const idx = db.shiftCloses.findIndex(
+    (c) =>
+      c.id === Number(req.params.id) &&
+      c.empleado === req.session.employeeName &&
+      c.fecha === todayStr()
+  );
+  if (idx === -1) return res.status(404).json({ error: "Cierre no encontrado" });
+  const [removed] = db.shiftCloses.splice(idx, 1);
+  saveDB(db);
+  broadcastUpdate("shift-close-deleted", { id: removed.id });
+  res.json({ ok: true });
+});
+
+// -------------------------------------------------------------------
+// CIERRES DE TURNO — auditoría histórica (solo Gerente)
+// -------------------------------------------------------------------
+app.get("/api/shift-closes", requireManager, (req, res) => {
+  const db = getDB();
+  const { from, to, employee } = req.query;
+  let list = db.shiftCloses;
+  if (from) list = list.filter((c) => c.fecha >= from);
+  if (to) list = list.filter((c) => c.fecha <= to);
+  if (employee) list = list.filter((c) => c.empleado === employee);
+  list = list.slice().sort((a, b) => b.id - a.id);
+  res.json(list);
+});
+
+app.delete("/api/shift-closes/:id", requireManager, (req, res) => {
+  const db = getDB();
+  const idx = db.shiftCloses.findIndex((c) => c.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: "Cierre no encontrado" });
+  const [removed] = db.shiftCloses.splice(idx, 1);
+  saveDB(db);
+  broadcastUpdate("shift-close-deleted", { id: removed.id });
+  res.json({ ok: true });
+});
+
+// -------------------------------------------------------------------
 // VISTA GERENTE — Registros con filtros libres (histórico completo)
 // -------------------------------------------------------------------
 app.get("/api/records", requireManager, (req, res) => {
@@ -399,7 +529,7 @@ app.get("/api/dashboard", requireManager, (req, res) => {
 
   function cashBreakdown(list) {
     const byMethod = {};
-    for (const m of db.paymentMethods) byMethod[m] = 0;
+    for (const m of db.paymentMethods) byMethod[m.name] = 0;
     for (const r of list) {
       for (const p of r.pagos || []) {
         byMethod[p.metodo] = (byMethod[p.metodo] || 0) + p.monto;
@@ -453,6 +583,12 @@ app.get("/api/dashboard", requireManager, (req, res) => {
       hoy: cashBreakdown(recordsToday),
       semana: cashBreakdown(recordsWeek),
       mes: cashBreakdown(recordsMonth),
+    },
+    // Resumen simplificado en 3 categorías (Efectivo / Transferencia / Tarjeta)
+    categorizado: {
+      hoy: categorizedBreakdown(recordsToday, db.paymentMethods),
+      semana: categorizedBreakdown(recordsWeek, db.paymentMethods),
+      mes: categorizedBreakdown(recordsMonth, db.paymentMethods),
     },
     ocupacion: {
       hoy: serviceStats(recordsToday),

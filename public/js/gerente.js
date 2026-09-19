@@ -54,18 +54,23 @@ function connectLive() {
     loadDashboard();
     const histVisible = document.getElementById('viewHist').style.display !== 'none';
     if (histVisible) loadHistory();
+    const cierresVisible = document.getElementById('viewCierres').style.display !== 'none';
+    if (cierresVisible) loadShiftCloses();
   };
 }
 
 function switchTab(tab) {
   document.getElementById('tabDash').classList.toggle('active', tab === 'dash');
   document.getElementById('tabHist').classList.toggle('active', tab === 'hist');
+  document.getElementById('tabCierres').classList.toggle('active', tab === 'cierres');
   document.getElementById('tabConfig').classList.toggle('active', tab === 'config');
   document.getElementById('viewDash').style.display = tab === 'dash' ? 'block' : 'none';
   document.getElementById('viewHist').style.display = tab === 'hist' ? 'block' : 'none';
+  document.getElementById('viewCierres').style.display = tab === 'cierres' ? 'block' : 'none';
   document.getElementById('viewConfig').style.display = tab === 'config' ? 'block' : 'none';
   if (tab !== 'hist') cancelEdit();
   if (tab === 'hist') loadHistory();
+  if (tab === 'cierres') loadShiftCloses();
   if (tab === 'config') loadConfigPanel();
 }
 
@@ -112,6 +117,12 @@ function setCajaPeriod(p) {
 function renderCaja() {
   if (!dashboardData) return;
   const c = dashboardData.caja[cajaPeriod];
+  const cat = dashboardData.categorizado[cajaPeriod];
+
+  document.getElementById('catEfectivo').textContent = money(cat.efectivo);
+  document.getElementById('catTransferencia').textContent = money(cat.transferencia);
+  document.getElementById('catTarjeta').textContent = money(cat.tarjeta);
+
   document.getElementById('cEfectivo').textContent = money(c.efectivo);
   document.getElementById('cBancos').textContent = money(c.bancos);
   document.getElementById('cDetalleBody').innerHTML = Object.entries(c.detalle).map(([metodo, monto]) => `
@@ -150,6 +161,8 @@ async function loadConfigLists() {
     '<option value="">Todos</option>' + cfg.employees.map(e => `<option value="${e}">${e}</option>`).join('');
   document.getElementById('hMetodo').innerHTML =
     '<option value="">Todos</option>' + cfg.paymentMethods.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+  document.getElementById('czEmployee').innerHTML =
+    '<option value="">Todos</option>' + cfg.employees.map(e => `<option value="${e}">${e}</option>`).join('');
 }
 
 function buildFilterQuery() {
@@ -453,6 +466,65 @@ async function saveEdit() {
   cancelEdit();
   await loadHistory();
   await loadDashboard();
+}
+
+// ---------------------------------------------------------------
+// CIERRES DE TURNO — auditoría de lo que cada empleado declaró al
+// cerrar su turno (efectivo contado vs. lo que calculó el sistema).
+// ---------------------------------------------------------------
+function buildShiftFilterQuery() {
+  const params = new URLSearchParams();
+  const from = document.getElementById('czFrom').value;
+  const to = document.getElementById('czTo').value;
+  const employee = document.getElementById('czEmployee').value;
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  if (employee) params.set('employee', employee);
+  return params.toString();
+}
+
+async function loadShiftCloses() {
+  const qs = buildShiftFilterQuery();
+  const res = await fetch('/api/shift-closes?' + qs);
+  const rows = await res.json();
+  const body = document.getElementById('czBody');
+  const empty = document.getElementById('czEmpty');
+  document.getElementById('czCount').textContent = `(${rows.length} cierre${rows.length === 1 ? '' : 's'})`;
+
+  if (!rows.length) {
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  body.innerHTML = rows.map(c => {
+    const diffHtml = Math.abs(c.diferencia) < 0.01
+      ? '<span class="tag cash">Cuadra</span>'
+      : c.diferencia > 0
+        ? `<span class="tag cash">+${money(c.diferencia)}</span>`
+        : `<span class="tag" style="background:var(--danger-bg);color:var(--danger);">${money(c.diferencia)}</span>`;
+    return `<tr>
+      <td>${c.id}</td>
+      <td>${c.fecha}</td>
+      <td>${c.hora}</td>
+      <td>${c.empleado}</td>
+      <td class="money">${money(c.efectivoSistema)}</td>
+      <td class="money">${money(c.transferenciaSistema)}</td>
+      <td class="money">${money(c.tarjetaSistema)}</td>
+      <td class="money">${money(c.totalSistema)}</td>
+      <td class="money">${money(c.efectivoDeclarado)}</td>
+      <td>${diffHtml}</td>
+      <td>${c.notas ? c.notas : '—'}</td>
+      <td><button class="icon-btn danger" onclick="deleteShiftClose(${c.id})">Eliminar</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function deleteShiftClose(id) {
+  if (!confirm('¿Eliminar este cierre de turno del historial? Esta acción no se puede deshacer.')) return;
+  await fetch('/api/shift-closes/' + id, { method: 'DELETE' });
+  await loadShiftCloses();
 }
 
 // ---------------------------------------------------------------
