@@ -81,12 +81,34 @@ function requireManagerSSE(req, res, next) {
 // -------------------------------------------------------------------
 // Utilidades
 // -------------------------------------------------------------------
+
+// El servidor (Railway) corre en UTC, pero el hostal opera en hora de
+// Ecuador (UTC-05:00, sin horario de verano). Si calculáramos "hoy" con
+// la hora del servidor, después de las 7pm en Ecuador el sistema ya
+// creería que es el día siguiente. Por eso TODA fecha/hora "actual" del
+// sistema se calcula explícitamente en esta zona horaria.
+const HOSTAL_TIMEZONE = "America/Guayaquil";
+
 function todayStr() {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return new Date().toLocaleDateString("en-CA", { timeZone: HOSTAL_TIMEZONE }); // YYYY-MM-DD
+}
+
+function nowHora() {
+  return new Date().toLocaleTimeString("en-GB", {
+    timeZone: HOSTAL_TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Suma (o resta, con delta negativo) días a una fecha "YYYY-MM-DD".
+// Usa UTC internamente solo para la aritmética del calendario — no
+// depende de la zona horaria del servidor.
+function addDays(dateStr, delta) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return dt.toISOString().slice(0, 10);
 }
 
 function startOfWeek(dateStr) {
@@ -209,6 +231,21 @@ app.post("/api/login/employee", (req, res) => {
   res.json({ ok: true, employeeName: emp.name });
 });
 
+// El empleado, ya autenticado, puede cambiar su propio PIN (no requiere
+// el PIN actual porque ya demostró su identidad al iniciar sesión).
+app.post("/api/employee/my-pin", requireEmployee, (req, res) => {
+  const { newPin } = req.body;
+  if (!newPin || String(newPin).trim().length < 4) {
+    return res.status(400).json({ error: "El PIN debe tener al menos 4 dígitos" });
+  }
+  const db = getDB();
+  const emp = db.employees.find((e) => e.name === req.session.employeeName);
+  if (!emp) return res.status(404).json({ error: "Empleado no encontrado" });
+  emp.pinHash = bcrypt.hashSync(String(newPin).trim(), 8);
+  saveDB(db);
+  res.json({ ok: true });
+});
+
 app.post("/api/login/manager", (req, res) => {
   const { password } = req.body;
   const db = getDB();
@@ -249,13 +286,25 @@ app.get("/api/config", (req, res) => {
 // VISTA EMPLEADO
 // Solo ve y crea registros de SU propio turno (su nombre + fecha de hoy)
 // -------------------------------------------------------------------
+// El empleado puede revisar sus ventas de hoy o de hasta 7 días atrás
+// (?fecha=YYYY-MM-DD). Fuera del día de hoy es solo consulta: crear,
+// editar o eliminar ventas sigue restringido al día actual (ver más
+// abajo). Cualquier fecha fuera del rango permitido se ajusta al
+// límite más cercano.
 app.get("/api/records/mine", requireEmployee, (req, res) => {
   const db = getDB();
   const today = todayStr();
+  const minDate = addDays(today, -6); // hoy + 6 días atrás = 7 días en total
+
+  let fecha = req.query.fecha || today;
+  if (fecha > today) fecha = today;
+  if (fecha < minDate) fecha = minDate;
+
   const mine = db.records
-    .filter((r) => r.empleado === req.session.employeeName && r.fecha === today)
+    .filter((r) => r.empleado === req.session.employeeName && r.fecha === fecha)
     .sort((a, b) => b.id - a.id);
-  res.json(mine);
+
+  res.json({ fecha, today, minDate, records: mine });
 });
 
 app.post("/api/records", requireEmployee, (req, res) => {
@@ -273,7 +322,7 @@ app.post("/api/records", requireEmployee, (req, res) => {
   const record = {
     id: nextRecordId(db),
     fecha: fecha || todayStr(), // automática, editable si el empleado la envía
-    hora: hora || new Date().toTimeString().slice(0, 5),
+    hora: hora || nowHora(),
     // Una venta puede incluir varias habitaciones/servicios (ej. un
     // huésped que reserva más de un cuarto bajo la misma factura).
     items: items.map((it) => ({
@@ -396,7 +445,7 @@ app.post("/api/shift-close", requireEmployee, (req, res) => {
   const cierre = {
     id: nextShiftCloseId(db),
     fecha: today,
-    hora: new Date().toTimeString().slice(0, 5),
+    hora: nowHora(),
     empleado: req.session.employeeName,
     efectivoSistema: breakdown.efectivo,
     transferenciaSistema: breakdown.transferencia,
@@ -670,8 +719,29 @@ app.put("/api/admin/employees/:name", requireManager, (req, res) => {
   const db = getDB();
   const emp = db.employees.find((e) => e.name === req.params.name);
   if (!emp) return res.status(404).json({ error: "No encontrado" });
+
+  if (req.body.newName !== undefined) {
+    const newName = String(req.body.newName).trim();
+    if (!newName) return res.status(400).json({ error: "El nombre no puede quedar vacío" });
+    if (newName !== emp.name && db.employees.some((e) => e.name === newName)) {
+      return res.status(400).json({ error: "Ya existe un empleado con ese nombre" });
+    }
+    emp.name = newName;
+  }
   if (req.body.active !== undefined) emp.active = !!req.body.active;
   if (req.body.pin) emp.pinHash = bcrypt.hashSync(String(req.body.pin), 8);
+  saveDB(db);
+  res.json({ ok: true });
+});
+
+// Elimina por completo a un empleado de la lista (no solo desactivarlo).
+// Las ventas y cierres de turno que ya registró conservan su nombre tal
+// como quedó guardado — no se modifican ni se borran.
+app.delete("/api/admin/employees/:name", requireManager, (req, res) => {
+  const db = getDB();
+  const existed = db.employees.some((e) => e.name === req.params.name);
+  if (!existed) return res.status(404).json({ error: "No encontrado" });
+  db.employees = db.employees.filter((e) => e.name !== req.params.name);
   saveDB(db);
   res.json({ ok: true });
 });

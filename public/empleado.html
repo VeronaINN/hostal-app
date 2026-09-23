@@ -17,12 +17,29 @@
     <div class="who">
       <span class="role-tag">Empleado</span>
       <span id="empNameLabel"></span>
+      <button class="btn-logout" onclick="togglePinPanel()">Cambiar mi PIN</button>
       <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
     </div>
   </div>
 
   <div class="main">
     <div id="msgBox"></div>
+
+    <div class="card" id="pinPanel" style="display:none;max-width:420px;">
+      <h2><span class="num">🔒</span> Cambiar mi PIN</h2>
+      <div class="form-row">
+        <div class="field" style="max-width:160px;">
+          <label>Nuevo PIN</label>
+          <input type="password" id="newPinInput" maxlength="6" placeholder="••••" />
+        </div>
+        <div class="field" style="max-width:160px;">
+          <label>Confirmar PIN</label>
+          <input type="password" id="confirmPinInput" maxlength="6" placeholder="••••" />
+        </div>
+      </div>
+      <button class="btn-primary" style="max-width:180px;" onclick="changeMyPin()">Guardar PIN</button>
+      <button class="btn-secondary" style="max-width:120px;" onclick="togglePinPanel()">Cancelar</button>
+    </div>
 
     <div class="card">
       <h2><span class="num">+</span> Registrar venta</h2>
@@ -105,7 +122,17 @@
     </div>
 
     <div class="card">
-      <h2><span class="num">≡</span> Ventas de mi turno (hoy)</h2>
+      <h2><span class="num">≡</span> Mis ventas <span class="small-text" id="myDateLabel"></span></h2>
+      <div class="form-row" style="margin-bottom:14px;">
+        <div class="field" style="max-width:180px;">
+          <label>Ver ventas del día</label>
+          <input type="date" id="myDateFilter" onchange="loadMine(this.value)" />
+        </div>
+        <button class="btn-secondary" onclick="goToToday()">Hoy</button>
+      </div>
+      <div id="readOnlyNotice" class="small-text" style="display:none;margin-bottom:10px;color:var(--gray-500);">
+        Modo solo lectura — solo puedes editar o eliminar ventas del día de hoy.
+      </div>
       <div class="table-wrap">
         <table class="data" id="myTable">
           <thead>
@@ -117,9 +144,9 @@
           <tbody id="myTableBody"></tbody>
         </table>
       </div>
-      <div id="myEmpty" class="empty-state" style="display:none;">Aún no registras ventas en este turno.</div>
+      <div id="myEmpty" class="empty-state" style="display:none;">Aún no hay ventas registradas ese día.</div>
       <hr class="divider" />
-      <div class="small-text">Total registrado en este turno (referencial, no incluye consolidados de meses anteriores): <b id="myTotal">$0.00</b></div>
+      <div class="small-text">Total del día mostrado: <b id="myTotal">$0.00</b></div>
     </div>
   </div>
 </div>

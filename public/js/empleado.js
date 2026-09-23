@@ -26,8 +26,15 @@ async function boot() {
   document.getElementById('empNameLabel').textContent = session.employeeName;
 
   const now = new Date();
-  document.getElementById('fFecha').value = now.toISOString().slice(0, 10);
+  const todayLocal = localDateStr(now);
+  document.getElementById('fFecha').value = todayLocal;
   document.getElementById('fHora').value = now.toTimeString().slice(0, 5);
+
+  const weekAgo = new Date(now);
+  weekAgo.setDate(weekAgo.getDate() - 6);
+  document.getElementById('myDateFilter').min = localDateStr(weekAgo);
+  document.getElementById('myDateFilter').max = todayLocal;
+  document.getElementById('myDateFilter').value = todayLocal;
 
   await loadConfig();
   await loadMine();
@@ -57,6 +64,17 @@ function showMsg(html) {
 
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+// IMPORTANTE: nunca usar toISOString() para obtener "la fecha de hoy" en
+// el navegador — toISOString() siempre convierte a UTC, y en Ecuador
+// (UTC-05:00) eso puede adelantar la fecha varias horas antes de
+// medianoche. Estas funciones usan los campos LOCALES del navegador.
+function localDateStr(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 // ---------------------------------------------------------------
@@ -334,12 +352,23 @@ function cancelEditMine() {
   resetFormBlank();
 }
 
-async function loadMine() {
-  const res = await fetch('/api/records/mine');
-  const rows = await res.json();
-  myRecords = rows;
+let viewingDate = null; // fecha actualmente mostrada en la tabla "Mis ventas"
+
+async function loadMine(fecha) {
+  const url = fecha ? '/api/records/mine?fecha=' + encodeURIComponent(fecha) : '/api/records/mine';
+  const res = await fetch(url);
+  const data = await res.json();
+  myRecords = data.records;
+  viewingDate = data.fecha;
+
+  document.getElementById('myDateFilter').value = data.fecha;
+  const isToday = data.fecha === data.today;
+  document.getElementById('myDateLabel').textContent = isToday ? '(hoy)' : `(${data.fecha})`;
+  document.getElementById('readOnlyNotice').style.display = isToday ? 'none' : 'block';
+
   const body = document.getElementById('myTableBody');
   const empty = document.getElementById('myEmpty');
+  const rows = myRecords;
 
   if (rows.length === 0) {
     body.innerHTML = '';
@@ -358,6 +387,10 @@ async function loadMine() {
     const pagosHtml = (r.pagos || []).map(p =>
       `<span class="tag ${p.metodo === 'EFECTIVO' ? 'cash' : 'bank'}">${p.metodo}: $${p.monto.toFixed(2)}</span>`
     ).join(' ');
+    const actions = isToday
+      ? `<button class="icon-btn" onclick="editMine(${r.id})">Editar</button>
+         <button class="icon-btn danger" onclick="deleteMine(${r.id})">Eliminar</button>`
+      : '<span class="small-text">—</span>';
     return `<tr>
       <td>${r.id}</td>
       <td>${r.hora || '—'}</td>
@@ -366,13 +399,50 @@ async function loadMine() {
       <td>${pagosHtml}</td>
       <td>${r.factura || '—'}</td>
       <td>${r.comprobante || '—'}</td>
-      <td>
-        <button class="icon-btn" onclick="editMine(${r.id})">Editar</button>
-        <button class="icon-btn danger" onclick="deleteMine(${r.id})">Eliminar</button>
-      </td>
+      <td>${actions}</td>
     </tr>`;
   }).join('');
   document.getElementById('myTotal').textContent = '$' + total.toFixed(2);
+}
+
+function goToToday() {
+  loadMine(); // sin parámetro = el backend usa el día de hoy
+}
+
+// ---------------------------------------------------------------
+// MI PIN
+// ---------------------------------------------------------------
+function togglePinPanel() {
+  const panel = document.getElementById('pinPanel');
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'block' : 'none';
+  if (opening) {
+    document.getElementById('newPinInput').value = '';
+    document.getElementById('confirmPinInput').value = '';
+  }
+}
+
+async function changeMyPin() {
+  const newPin = document.getElementById('newPinInput').value.trim();
+  const confirmPin = document.getElementById('confirmPinInput').value.trim();
+
+  if (newPin.length < 4) {
+    return showMsg('<div class="error-msg">El PIN debe tener al menos 4 dígitos.</div>');
+  }
+  if (newPin !== confirmPin) {
+    return showMsg('<div class="error-msg">Los dos PIN no coinciden.</div>');
+  }
+
+  const res = await fetch('/api/employee/my-pin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newPin })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+
+  showMsg('<div class="ok-msg">PIN actualizado. Úsalo la próxima vez que inicies sesión.</div>');
+  togglePinPanel();
 }
 
 async function deleteMine(id) {

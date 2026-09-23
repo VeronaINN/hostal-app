@@ -542,7 +542,12 @@ async function loadConfigPanel() {
     <tr>
       <td>${e.name}</td>
       <td>${e.active ? '<span class="tag cash">Activo</span>' : '<span class="tag">Inactivo</span>'}</td>
-      <td><button class="icon-btn" onclick="toggleEmployee('${e.name}', ${!e.active})">${e.active ? 'Desactivar' : 'Activar'}</button></td>
+      <td>
+        <button class="icon-btn" onclick="toggleEmployee('${escAttr(e.name)}', ${!e.active})">${e.active ? 'Desactivar' : 'Activar'}</button>
+        <button class="icon-btn" onclick="renameEmployee('${escAttr(e.name)}')">Renombrar</button>
+        <button class="icon-btn" onclick="resetEmployeePin('${escAttr(e.name)}')">Restablecer PIN</button>
+        <button class="icon-btn danger" onclick="deleteEmployee('${escAttr(e.name)}')">Eliminar</button>
+      </td>
     </tr>
   `).join('');
 
@@ -611,6 +616,44 @@ async function toggleEmployee(name, active) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ active })
   });
+  await loadConfigPanel();
+  await loadConfigLists();
+}
+
+async function renameEmployee(name) {
+  const newName = prompt('Nuevo nombre para "' + name + '":', name);
+  if (!newName || newName.trim() === '' || newName.trim() === name) return;
+  const res = await fetch('/api/admin/employees/' + encodeURIComponent(name), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newName: newName.trim() })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+  showMsg('<div class="ok-msg">Empleado renombrado. Las ventas que ya registró conservan el nombre anterior.</div>');
+  await loadConfigPanel();
+  await loadConfigLists();
+}
+
+async function resetEmployeePin(name) {
+  const newPin = prompt('Nuevo PIN para "' + name + '" (mínimo 4 dígitos):');
+  if (!newPin || newPin.trim() === '') return;
+  const res = await fetch('/api/admin/employees/' + encodeURIComponent(name), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: newPin.trim() })
+  });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+  showMsg('<div class="ok-msg">PIN actualizado.</div>');
+}
+
+async function deleteEmployee(name) {
+  if (!confirm(`¿Eliminar por completo al empleado "${name}"? Sus ventas y cierres ya registrados NO se borran, solo deja de poder iniciar sesión.`)) return;
+  const res = await fetch('/api/admin/employees/' + encodeURIComponent(name), { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) return showMsg(`<div class="error-msg">${data.error}</div>`);
+  showMsg('<div class="ok-msg">Empleado eliminado.</div>');
   await loadConfigPanel();
   await loadConfigLists();
 }

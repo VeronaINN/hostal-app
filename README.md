@@ -31,6 +31,15 @@ hostal-app/
 └── package.json
 ```
 
+**Zona horaria fija a Ecuador:** cuando la app corre en un servicio
+como Railway, el servidor internamente usa hora UTC, no la hora de
+Ecuador. Si no se corrigiera esto, después de las 7pm el sistema
+empezaría a creer que ya es el día siguiente (fechas por defecto
+incorrectas, "no hay ventas hoy" aunque acabes de registrar una,
+etc.). Por eso el backend calcula "hoy" y "la hora actual" siempre
+en la zona horaria `America/Guayaquil` (UTC-05:00), sin importar en
+qué servidor o país esté alojada la app.
+
 **Ventas con varias habitaciones/servicios:** cada registro es una
 "venta" que puede incluir varios `items` (uno por cada
 habitación/servicio, con su propia tarifa), pero comparte una sola
@@ -202,14 +211,20 @@ de configuración) queden funcionando:
   coincide con la tarifa total, y no deja guardar el registro si no
   cuadra. Si el cliente pagó todo con un solo método, simplemente se
   usa la primera fila y no hace falta agregar más.
-- Solo ves las ventas que tú mismo cargaste **en el día actual**. No
-  hay acceso a totales del mes, histórico de otros días ni
-  configuración del sistema.
+- Solo ves y editas ventas de **el día actual**. No hay acceso a
+  totales del mes ni configuración del sistema. Sí puedes **revisar**
+  (solo lectura) tus ventas de hasta **7 días atrás** con el selector
+  de fecha en "Mis ventas" — útil para confirmar algo de días
+  anteriores, aunque ya no se pueda editar.
 - Puedes **editar o eliminar** una venta tuya mientras siga siendo el
   mismo día (por ejemplo, si te equivocaste al tipear). El botón
   "Editar" carga la venta en el mismo formulario de arriba; al
   terminar, el botón dice "Guardar cambios" en vez de "Guardar
   venta". Puedes cancelar la edición en cualquier momento.
+- **Cambiar mi PIN:** el botón "Cambiar mi PIN" en la barra superior
+  te permite establecer un PIN nuevo sin depender del Gerente. No
+  hace falta escribir el PIN actual, ya que iniciar sesión ya
+  demostró que eres tú.
 - **Cierre de turno:** en la tarjeta "Cierre de turno" ves en todo
   momento cuánto llevas cobrado hoy en Efectivo, Transferencia y
   Tarjeta. Al terminar tu turno, cuenta el efectivo físico de la caja
@@ -241,12 +256,15 @@ de configuración) queden funcionando:
   método de pago o habitación, edita o elimina cualquier registro, y
   exporta el resultado filtrado a un archivo `.xlsx` con el botón
   "Exportar a Excel".
-- **Configuración:** administra empleados (crear, activar/desactivar,
-  cambiar PIN), y ahora también **añade, edita o elimina**
-  habitaciones, tipos de servicio y métodos de pago (incluyendo si
-  cada método requiere N° de comprobante). Los cambios aquí solo
-  afectan las opciones que verán los empleados de ahí en adelante —
-  las ventas ya registradas no se modifican.
+- **Configuración:** por cada empleado puedes **Activar/Desactivar**,
+  **Renombrar**, **Restablecer PIN** (si lo olvidó) o **Eliminar**
+  por completo. Eliminar a alguien no borra sus ventas ni cierres de
+  turno ya registrados — solo deja de poder iniciar sesión. También
+  puedes **añadir, editar o eliminar** habitaciones, tipos de
+  servicio y métodos de pago (incluyendo si cada método requiere N°
+  de comprobante). Los cambios aquí solo afectan las opciones que
+  verán los empleados de ahí en adelante — las ventas ya registradas
+  no se modifican.
 
 ---
 
